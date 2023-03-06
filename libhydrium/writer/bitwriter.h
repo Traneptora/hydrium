@@ -1,6 +1,7 @@
 #ifndef HYDRIUM_BITWRITER_H_
 #define HYDRIUM_BITWRITER_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "libhydrium/hydrium.h"
@@ -11,8 +12,10 @@ typedef struct HYDBitWriter {
     size_t buffer_len;
     uint64_t cache;
     int cache_bits;
+    int overflow_state;
 } HYDBitWriter;
 
+HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len, uint64_t cache, int cache_bits);
 HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits);
 
 HYDStatusCode hyd_write_zero_pad(HYDBitWriter *bw);
