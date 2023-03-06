@@ -50,11 +50,11 @@ HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, HYDImageMetadata *metadata);
 
 HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len);
 
-HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer,
-                            size_t tile_x, size_t tile_y, ptrdiff_t row_stride, ptrdiff_t plane_stride);
+HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3],
+                            size_t tile_x, size_t tile_y, ptrdiff_t row_stride, ptrdiff_t pixel_stride);
 
-HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer,
-                             size_t tile_x, size_t tile_y, ptrdiff_t row_stride, ptrdiff_t plane_stride);
+HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer[3],
+                             size_t tile_x, size_t tile_y, ptrdiff_t row_stride, ptrdiff_t pixel_stride);
 
 HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written);
 

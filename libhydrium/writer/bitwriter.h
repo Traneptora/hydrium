@@ -18,5 +18,6 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits);
 HYDStatusCode hyd_write_zero_pad(HYDBitWriter *bw);
 HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const uint32_t c[4], const uint32_t u[4], uint32_t value);
 HYDStatusCode hyd_write_u64(HYDBitWriter *bw, uint64_t value);
+HYDStatusCode hyd_write_bool(HYDBitWriter *bw, int flag);
 
-#endif
+#endif /* HYDRIUM_BITWRITER_H_ */
