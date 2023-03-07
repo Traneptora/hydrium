@@ -22,6 +22,11 @@ struct HYDEncoder {
     size_t out_len;
 
     HYDBitWriter writer;
+
+    int wrote_header;
+    size_t lf_group_x;
+    size_t lf_group_y;
+    int wrote_frame_header;
 };
 
 #endif /* HYDRIUM_INTERNAL_H_ */
