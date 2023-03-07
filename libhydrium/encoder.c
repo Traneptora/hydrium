@@ -39,10 +39,12 @@ HYDStatusCode hyd_write_header(HYDEncoder *encoder) {
     return bw->overflow_state;
 }
 
-HYDStatusCode hyd_write_frame_header(HYDEncoder *encoder) {
+HYDStatusCode hyd_write_frame_header(HYDEncoder *encoder, size_t lf_x, size_t lf_y) {
     HYDBitWriter *bw = &encoder->writer;
     if (bw->overflow_state)
         return bw->overflow_state;
+    
+    if (!lf_x && !lf_y && encoder->metadata.width <= 2048 && encoder->metadata.height <= 2048)
 
     hyd_write(bw, 0x8680, 16);
 }
