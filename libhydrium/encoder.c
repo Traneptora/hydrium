@@ -44,9 +44,15 @@ HYDStatusCode hyd_write_frame_header(HYDEncoder *encoder, size_t lf_x, size_t lf
     if (bw->overflow_state)
         return bw->overflow_state;
     
-    if (!lf_x && !lf_y && encoder->metadata.width <= 2048 && encoder->metadata.height <= 2048)
+    if (!lf_x && !lf_y && encoder->metadata.width <= 2048 && encoder->metadata.height <= 2048) {
+        /* all_default */
+        HYDStatusCode ret = hyd_write_bool(bw, 1);
+        encoder->wrote_frame_header = 1;
+        return ret;
+    }
 
     hyd_write(bw, 0x8680, 16);
+    // TODO write crop
 }
 
 HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3],
@@ -60,7 +66,7 @@ HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3],
             return ret;
     }
     if (!encoder->wrote_frame_header) {
-        if ((ret = hyd_write_frame_header(encoder)) < 0)
+        if ((ret = hyd_write_frame_header(encoder, tile_x >> 3, tile_y >> 3)) < 0)
             return ret;
     }
 
