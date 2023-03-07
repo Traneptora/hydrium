@@ -23,18 +23,47 @@ static int64_t linearize(const int64_t srgb) {
     return (((prepow_s * prepow_s) >> 16) * postpow) >> 16;
 }
 
+static int64_t pow_one_third(const int64_t mix) {
+    const uint64_t log = uint64_log2(mix);
+    const uint64_t prepow_d = (mix << (20 - log)) & ~(~UINT64_C(0) << 20) | ((0x3FE + log - 15) << 20);
+    const uint64_t postpow_d = ((((prepow_d - INT64_C(1072632447)) * 1365) >> 12) + INT64_C(1072632447));
+    const uint64_t postpow = ((postpow_d & ~(~UINT64_C(0) << 20)) | (UINT64_C(1) << 20))
+                             >> (1027 - ((postpow_d >> 20) & 0x3FF));
+    return postpow;
+}
+
+static void rgb_to_xyb(HYDEncoder *encoder, const size_t y, const size_t x, const int64_t r, const int64_t g, const int64_t b) {
+    const int64_t rp = encoder->metadata.linear_light ? r : linearize(r);
+    const int64_t gp = encoder->metadata.linear_light ? g : linearize(g);
+    const int64_t bp = encoder->metadata.linear_light ? b : linearize(b);
+    const int64_t lgamma = pow_one_third(((rp * 307) >> 10) + ((gp * 637) >> 10) + ((bp * 319) >> 12) + 249) - 10220;
+    const int64_t mgamma = pow_one_third(((rp * 471) >> 11) + ((gp * 45351) >> 16) + ((bp * 319) >> 12) + 249) - 10220;
+    const int64_t sgamma = pow_one_third(((rp * 997) >> 12) + ((gp * 3355) >> 14) + ((gp * 565) >> 10) + 249) - 10220;
+    encoder->xyb[0][y][x] = (lgamma - mgamma) >> 1;
+    encoder->xyb[1][y][x] = (lgamma + mgamma) >> 1;
+    encoder->xyb[2][y][x] = sgamma;
+}
+
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     for (size_t y = 0; y < 256; y++) {
+        const ptrdiff_t y_off = y * row_stride;
         for (size_t x = 0; x < 256; x++) {
-            const ptrdiff_t offset = y * row_stride + x * pixel_stride;
-            const int64_t r = buffer[0][offset];
-            const int64_t g = buffer[1][offset];
-            const int64_t b = buffer[2][offset];
-            const int64_t rp = encoder->metadata.linear_light ? r : linearize(r);
-            const int64_t gp = encoder->metadata.linear_light ? g : linearize(g);
-            const int64_t bp = encoder->metadata.linear_light ? b : linearize(b);
-
+            const ptrdiff_t offset = y_off + x * pixel_stride;
+            rgb_to_xyb(encoder, y, x, buffer[0][offset], buffer[1][offset], buffer[2][offset]);
         }
-
     }
+
+    return HYD_OK;
+}
+
+HYDStatusCode hyd_populate_xyb_buffer8(HYDEncoder *encoder, const uint8_t *buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+    for (size_t y = 0; y < 256; y++) {
+        const ptrdiff_t y_off = y * row_stride;
+        for (size_t x = 0; x < 256; x++) {
+            const ptrdiff_t offset = y_off + x * pixel_stride;
+            rgb_to_xyb(encoder, y, x, buffer[0][offset], buffer[1][offset], buffer[2][offset]);
+        }
+    }
+
+    return HYD_OK;
 }

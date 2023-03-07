@@ -5,15 +5,14 @@
 #include "bitwriter.h"
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len, uint64_t cache, int cache_bits) {
-    if (buffer_len < 32)
-        return HYD_API_ERROR;
     bw->buffer = buffer;
-    bw->buffer_len = buffer_len - 32;
+    bw->buffer_len = buffer_len;
     bw->buffer_pos = 0;
     bw->cache = cache;
     bw->cache_bits = cache_bits;
     bw->overflow_state = HYD_OK;
-
+    memset(bw->overflow, 0, sizeof(bw->overflow));
+    bw->overflow_pos = 0;
     return HYD_OK;
 }
 
@@ -28,11 +27,14 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
         return bw->overflow_state;
     }
     while (bw->cache_bits >= 8) {
-        bw->buffer[bw->buffer_pos++] = bw->cache & 0xFF;
+        uint8_t *buf = bw->buffer_pos >= bw->buffer_len ?
+                       bw->overflow + bw->overflow_pos++ :
+                       bw->buffer + bw->buffer_pos++;
+        *buf = bw->cache & 0xFF;
         bw->cache >>= 8;
         bw->cache_bits -= 8;
     }
-    if (bw->buffer_pos > bw->buffer_len)
+    if (bw->overflow_pos > 0)
         bw->overflow_state = HYD_NEED_MORE_OUTPUT;
     return hyd_write(bw, value, bits);
 }

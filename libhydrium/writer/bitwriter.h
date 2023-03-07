@@ -12,6 +12,8 @@ typedef struct HYDBitWriter {
     size_t buffer_len;
     uint64_t cache;
     int cache_bits;
+    uint8_t overflow[32];
+    size_t overflow_pos;
     int overflow_state;
 } HYDBitWriter;
 

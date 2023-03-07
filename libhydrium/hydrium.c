@@ -55,3 +55,16 @@ HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, HYDImageMetadata *metadata) 
 
     return HYD_OK;
 }
+
+HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len) {
+    if (buffer_len < 32)
+        return HYD_API_ERROR;
+    encoder->out = buffer;
+    encoder->out_len = buffer_len;
+    encoder->out_pos = 0;
+    if (encoder->writer.overflow_pos > 0) {
+        memcpy(encoder->out, encoder->writer.overflow, encoder->writer.overflow_pos);
+        encoder->out_pos = encoder->writer.overflow_pos;
+    }
+    hyd_init_bit_writer(&encoder->writer, buffer, buffer_len, encoder->writer.cache, encoder->writer.cache_bits);
+}
