@@ -23,9 +23,12 @@ struct HYDEncoder {
 
     HYDBitWriter writer;
 
-    int wrote_header;
     size_t lf_group_x;
     size_t lf_group_y;
+    size_t lf_group_width;
+    size_t lf_group_height;
+
+    int wrote_header;
     int wrote_frame_header;
 };
 
