@@ -39,25 +39,18 @@ typedef struct HYDImageMetadata {
 /* opaque structure */
 typedef struct HYDEncoder HYDEncoder;
 
-/* 
- * default implementations for HYDAllocator
- * these just call malloc/free
- */
-void *hyd_alloc(size_t size, void *opaque);
-void hyd_free(void *ptr, void *opaque);
-
-HYDEncoder *hyd_encoder_new(HYDAllocator *allocator);
+HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator);
 HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder);
 
-HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, HYDImageMetadata *metadata);
+HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *metadata);
 
 HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len);
 
 HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3],
-                            size_t tile_x, size_t tile_y, ptrdiff_t row_stride, ptrdiff_t pixel_stride);
+                            ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t *next_x, size_t *next_y);
 
 HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer[3],
-                             size_t tile_x, size_t tile_y, ptrdiff_t row_stride, ptrdiff_t pixel_stride);
+                             ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t *next_x, size_t *next_y);
 
 HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written);
 

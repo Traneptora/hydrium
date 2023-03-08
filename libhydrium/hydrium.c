@@ -10,15 +10,15 @@
 #include "hydrium.h"
 #include "internal.h"
 
-void *hyd_alloc(size_t size, void *opaque) {
+static void *hyd_alloc(size_t size, void *opaque) {
     return malloc(size);
 }
 
-void hyd_free(void *ptr, void *opaque) {
+static void hyd_free(void *ptr, void *opaque) {
     free(ptr);
 }
 
-HYDEncoder *hyd_encoder_new(HYDAllocator *allocator) {
+HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
     HYDEncoder *ret;
 
     if (allocator)
@@ -48,16 +48,25 @@ HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     return HYD_OK;
 }
 
-HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, HYDImageMetadata *metadata) {
+HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *metadata) {
     if (!metadata->width || !metadata->height)
         return HYD_API_ERROR;
+    const uint64_t width64 = metadata->width;
+    const uint64_t height64 = metadata->height;
+    if (width64 > UINT64_C(1) << 30 || height64 > UINT64_C(1) << 30)
+        return HYD_API_ERROR;
+    /* won't overflow due to above check */
+    if (width64 * height64 > UINT64_C(1) << 40)
+        return HYD_API_ERROR;
     encoder->metadata = *metadata;
+    if (width64 > (1 << 20) || height64 > (1 << 20) || width64 * height64 > (1 << 28))
+        encoder->level10 = 1;
 
     return HYD_OK;
 }
 
 HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len) {
-    if (buffer_len < 32)
+    if (buffer_len < 64)
         return HYD_API_ERROR;
     encoder->out = buffer;
     encoder->out_len = buffer_len;
@@ -66,5 +75,5 @@ HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, si
         memcpy(encoder->out, encoder->writer.overflow, encoder->writer.overflow_pos);
         encoder->out_pos = encoder->writer.overflow_pos;
     }
-    hyd_init_bit_writer(&encoder->writer, buffer, buffer_len, encoder->writer.cache, encoder->writer.cache_bits);
+    return hyd_init_bit_writer(&encoder->writer, buffer, buffer_len, encoder->writer.cache, encoder->writer.cache_bits);
 }
