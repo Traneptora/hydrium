@@ -36,6 +36,7 @@ static void rgb_to_xyb(HYDEncoder *encoder, const size_t y, const size_t x, cons
     const int64_t sgamma = pow_one_third(((rp * 997) >> 12) + ((gp * 3355) >> 14) + ((gp * 565) >> 10) + 249) - 10220;
     encoder->xyb[0][y][x] = (lgamma - mgamma) >> 1;
     encoder->xyb[1][y][x] = (lgamma + mgamma) >> 1;
+    /* chroma-from-luma adds B to Y */
     encoder->xyb[2][y][x] = sgamma - encoder->xyb[1][y][x];
 }
 

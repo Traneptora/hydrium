@@ -7,7 +7,8 @@
 #include "bitwriter.h"
 
 
-HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len, uint64_t cache, int cache_bits) {
+HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len,
+                                  uint64_t cache, int cache_bits) {
     bw->buffer = buffer;
     bw->buffer_len = buffer_len;
     bw->buffer_pos = 0;
