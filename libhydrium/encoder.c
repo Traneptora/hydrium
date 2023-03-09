@@ -14,14 +14,13 @@ static const uint8_t level10_header[49] = {
     0x0d, 0x0a, 0x87, 0x0a, 0x00, 0x00, 0x00, 0x14,
      'f',  't',  'y',  'p',  'j',  'x',  'l',  ' ',
     0x00, 0x00, 0x00, 0x00,  'j',  'x',  'l',  ' ',
-    0x00, 0x00, 0x00, 0x09,  'j',  'x',  'l',  'l',
-    0x0a, 0x00, 0x00, 0x00, 0x00,  'j',  'x',  'l',
-    'c',
+    0x00, 0x00, 0x00, 0x09,  'j',  'x',  'l',  'l', 0x0a,
+    0x00, 0x00, 0x00, 0x00,  'j',  'x',  'l',  'c',
 };
 
-static HYDStatusCode hyd_write_header(HYDEncoder *encoder) {
+static HYDStatusCode write_header(HYDEncoder *encoder) {
 
-    HYDBitWriter *bw = &encoder->working_writer;
+    HYDBitWriter *bw = &encoder->writer;
     if (bw->overflow_state)
         return bw->overflow_state;
 
@@ -44,8 +43,8 @@ static HYDStatusCode hyd_write_header(HYDEncoder *encoder) {
     return bw->overflow_state;
 }
 
-static HYDStatusCode hyd_write_frame_header(HYDEncoder *encoder) {
-    HYDBitWriter *bw = &encoder->working_writer;
+static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
+    HYDBitWriter *bw = &encoder->writer;
     HYDStatusCode ret;
 
     if (bw->overflow_state)
@@ -57,8 +56,6 @@ static HYDStatusCode hyd_write_frame_header(HYDEncoder *encoder) {
                             encoder->metadata.width - (encoder->group_x << 8) : 256;
     encoder->group_height = (encoder->group_y + 1) << 8 > encoder->metadata.height ? 
                             encoder->metadata.height - (encoder->group_y << 8) : 256;
-    encoder->group_width += 7 - ((encoder->group_width + 7) & 0x7);
-    encoder->group_height += 7 - ((encoder->group_height + 7) & 0x7);
 
     /*
      * all_default = 0:1
@@ -116,7 +113,8 @@ static HYDStatusCode hyd_write_frame_header(HYDEncoder *encoder) {
     return ret;
 }
 
-static HYDStatusCode hyd_send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t tile_y) {
+static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t tile_y) {
+    HYDStatusCode ret;
 
     if (tile_x >= (encoder->metadata.width + 255) >> 8 || tile_y >= (encoder->metadata.height + 255) >> 8)
         return HYD_API_ERROR;
@@ -124,31 +122,35 @@ static HYDStatusCode hyd_send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uin
     if (encoder->writer.overflow_state)
         return encoder->writer.overflow_state;
 
-    HYDStatusCode ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_buffer,
-                                            sizeof(encoder->working_buffer), 0, 0);
-    if (ret < 0)
-        return ret;
-
     encoder->group_x = tile_x;
     encoder->group_y = tile_y;
 
     if (!encoder->wrote_header) {
-        if ((ret = hyd_write_header(encoder)) < 0)
+        if ((ret = write_header(encoder)) < 0)
             return ret;
     }
 
     if (!encoder->wrote_frame_header) {
-        if ((ret = hyd_write_frame_header(encoder)) < 0)
+        if ((ret = write_frame_header(encoder)) < 0)
             return ret;
     }
 
     return HYD_OK;
 }
 
-static HYDStatusCode hyd_send_tile_post(HYDEncoder *encoder) {
+static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
-    HYDStatusCode ret = HYD_NEED_MORE_INPUT;
+    HYDStatusCode ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_buffer,
+                                            sizeof(encoder->working_buffer), 0, 0);
+    if (ret < 0)
+        return ret;
 
+    // Run Forward DCT
+    // Compute LF Coefficients
+
+    // Output sections to working buffer
+    // write TOC to main buffer
+    // start copy to main buffer
 
     return ret;
 }
@@ -156,23 +158,23 @@ static HYDStatusCode hyd_send_tile_post(HYDEncoder *encoder) {
 HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3], uint32_t tile_x, uint32_t tile_y,
                             ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     HYDStatusCode ret;
-    if ((ret = hyd_send_tile_pre(encoder, tile_x, tile_y)) < 0)
+    if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < 0)
         return ret;
 
     if ((ret = hyd_populate_xyb_buffer(encoder, buffer, row_stride, pixel_stride)) < 0)
         return ret;
 
-    return hyd_send_tile_post(encoder);
+    return encode_xyb_buffer(encoder);
 }
 
 HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer[3], uint32_t tile_x, uint32_t tile_y,
                             ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     HYDStatusCode ret;
-    if ((ret = hyd_send_tile_pre(encoder, tile_x, tile_y)) < 0)
+    if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < 0)
         return ret;
 
     if ((ret = hyd_populate_xyb_buffer8(encoder, buffer, row_stride, pixel_stride)) < 0)
         return ret;
 
-    return hyd_send_tile_post(encoder);
+    return encode_xyb_buffer(encoder);
 }
