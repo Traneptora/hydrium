@@ -46,12 +46,14 @@ HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *meta
 
 HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len);
 
-HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3], uint32_t tile_x, uint32_t tile_y,
+HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3], uint32_t tile_x, uint32_t tile_y,
                             ptrdiff_t row_stride, ptrdiff_t pixel_stride);
 
-HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer[3], uint32_t tile_x, uint32_t tile_y,
+HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3], uint32_t tile_x, uint32_t tile_y,
                              ptrdiff_t row_stride, ptrdiff_t pixel_stride);
 
 HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written);
+
+HYDStatusCode hyd_flush(HYDEncoder *encoder);
 
 #endif /* HYDRIUM_H_ */

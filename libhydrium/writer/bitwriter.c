@@ -3,9 +3,8 @@
  */
 #include <string.h>
 
-#include "libhydrium/hydrium.h"
+#include "libhydrium/internal.h"
 #include "bitwriter.h"
-
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len,
                                   uint64_t cache, int cache_bits) {
@@ -20,6 +19,18 @@ HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buff
     return HYD_OK;
 }
 
+static void hyd_bitwriter_flush0(HYDBitWriter *bw) {
+    while (bw->cache_bits >= 8) {
+        uint8_t *buf = bw->buffer_pos >= bw->buffer_len ?
+                       bw->overflow + bw->overflow_pos++ :
+                       bw->buffer + bw->buffer_pos++;
+        *buf = bw->cache & 0xFF;
+        bw->cache >>= 8;
+        bw->cache_bits -= 8;
+    }
+}
+
+
 HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
     if (bits <= 0)
         return bw->overflow_state;
@@ -30,14 +41,7 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
         bw->cache_bits += bits;
         return bw->overflow_state;
     }
-    while (bw->cache_bits >= 8) {
-        uint8_t *buf = bw->buffer_pos >= bw->buffer_len ?
-                       bw->overflow + bw->overflow_pos++ :
-                       bw->buffer + bw->buffer_pos++;
-        *buf = bw->cache & 0xFF;
-        bw->cache >>= 8;
-        bw->cache_bits -= 8;
-    }
+    hyd_bitwriter_flush0(bw);
     if (bw->overflow_pos > 0)
         bw->overflow_state = HYD_NEED_MORE_OUTPUT;
     return hyd_write(bw, value, bits);
@@ -60,6 +64,13 @@ HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const uint32_t c[4], const uint32_
             return hyd_write(bw, (vmc << 2) | i, u[i] + 2);
     }
     return HYD_API_ERROR;
+}
+
+
+HYDStatusCode hyd_bitwriter_flush(HYDBitWriter *bw) {
+    hyd_write_zero_pad(bw);
+    hyd_bitwriter_flush0(bw);
+    return bw->overflow_state;
 }
 
 HYDStatusCode hyd_write_u64(HYDBitWriter *bw, uint64_t value) {

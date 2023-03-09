@@ -10,7 +10,7 @@ static int64_t linearize(const int64_t srgb) {
         return (srgb * UINT64_C(332427809)) >> 32;
     const uint64_t prepow = (srgb + 3604) * UINT64_C(4071059048);
     const uint64_t log = hyd_fllog2(prepow);
-    const uint64_t prepow_d = (prepow >> (log - 20)) & ~(~UINT64_C(0) << 20) | ((0x3FE + log - 47) << 20);
+    const uint64_t prepow_d = ((prepow >> (log - 20)) & ~(~UINT64_C(0) << 20)) | ((0x3FE + log - 47) << 20);
     const uint64_t postpow_d = ((((prepow_d - INT64_C(1072632447)) * 410) >> 10) + INT64_C(1072632447));
     const uint64_t postpow = ((postpow_d & ~(~UINT64_C(0) << 20)) | (UINT64_C(1) << 20))
                              >> (1027 - ((postpow_d >> 20) & 0x3FF));
@@ -20,7 +20,7 @@ static int64_t linearize(const int64_t srgb) {
 
 static int64_t pow_one_third(const int64_t mix) {
     const uint64_t log = hyd_fllog2(mix);
-    const uint64_t prepow_d = (mix << (20 - log)) & ~(~UINT64_C(0) << 20) | ((0x3FE + log - 15) << 20);
+    const uint64_t prepow_d = ((mix << (20 - log)) & ~(~UINT64_C(0) << 20)) | ((0x3FE + log - 15) << 20);
     const uint64_t postpow_d = ((((prepow_d - INT64_C(1072632447)) * 1365) >> 12) + INT64_C(1072632447));
     const uint64_t postpow = ((postpow_d & ~(~UINT64_C(0) << 20)) | (UINT64_C(1) << 20))
                              >> (1027 - ((postpow_d >> 20) & 0x3FF));
@@ -40,7 +40,7 @@ static void rgb_to_xyb(HYDEncoder *encoder, const size_t y, const size_t x, cons
     encoder->xyb[2][y][x] = sgamma - encoder->xyb[1][y][x];
 }
 
-HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *const buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     for (size_t y = 0; y < encoder->group_height; y++) {
         const ptrdiff_t y_off = y * row_stride;
         for (size_t x = 0; x < encoder->group_width; x++) {
@@ -52,7 +52,7 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *buffe
     return HYD_OK;
 }
 
-HYDStatusCode hyd_populate_xyb_buffer8(HYDEncoder *encoder, const uint8_t *buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+HYDStatusCode hyd_populate_xyb_buffer8(HYDEncoder *encoder, const uint8_t *const buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     for (size_t y = 0; y < encoder->group_height; y++) {
         const ptrdiff_t y_off = y * row_stride;
         for (size_t x = 0; x < encoder->group_width; x++) {

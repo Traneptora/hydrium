@@ -150,12 +150,13 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
     // Output sections to working buffer
     // write TOC to main buffer
-    // start copy to main buffer
 
+    ret = hyd_flush(encoder);
+    encoder->wrote_frame_header = 0;
     return ret;
 }
 
-HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3], uint32_t tile_x, uint32_t tile_y,
+HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3], uint32_t tile_x, uint32_t tile_y,
                             ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     HYDStatusCode ret;
     if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < 0)
@@ -167,7 +168,7 @@ HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *buffer[3], uint
     return encode_xyb_buffer(encoder);
 }
 
-HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer[3], uint32_t tile_x, uint32_t tile_y,
+HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3], uint32_t tile_x, uint32_t tile_y,
                             ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     HYDStatusCode ret;
     if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < 0)
@@ -177,4 +178,10 @@ HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *buffer[3], uint
         return ret;
 
     return encode_xyb_buffer(encoder);
+}
+
+HYDStatusCode hyd_flush(HYDEncoder *encoder) {
+    // dummy stub
+
+    return hyd_bitwriter_flush(&encoder->writer);
 }

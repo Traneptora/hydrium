@@ -7,7 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "hydrium.h"
+#include <stdio.h>
+
 #include "internal.h"
 
 static void *hyd_alloc(size_t size, void *opaque) {
@@ -76,4 +77,9 @@ HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, si
         encoder->out_pos = encoder->writer.overflow_pos;
     }
     return hyd_init_bit_writer(&encoder->writer, buffer, buffer_len, encoder->writer.cache, encoder->writer.cache_bits);
+}
+
+HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written) {
+    *written = encoder->writer.buffer_pos;
+    return encoder->writer.overflow_state;
 }
