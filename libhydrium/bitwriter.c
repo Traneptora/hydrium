@@ -1,10 +1,13 @@
 /*
  * Bit Writer implementation
  */
+
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
-#include "libhydrium/internal.h"
 #include "bitwriter.h"
+#include "internal.h"
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len,
                                   uint64_t cache, int cache_bits) {

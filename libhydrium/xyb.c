@@ -1,9 +1,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "internal.h"
+#include "osdep.h"
 #include "xyb.h"
-#include "libhydrium/internal.h"
-#include "libhydrium/osdep.h"
 
 static int64_t linearize(const int64_t srgb) {
     if (srgb <= 2650)

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "libhydrium/libhydrium.h"
+#include "libhydrium.h"
 
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *const buffer[3],
                                       ptrdiff_t row_stride, ptrdiff_t pixel_stride);

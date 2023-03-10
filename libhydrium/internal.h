@@ -4,8 +4,8 @@
 #ifndef HYDRIUM_INTERNAL_H_
 #define HYDRIUM_INTERNAL_H_
 
+#include "bitwriter.h"
 #include "libhydrium.h"
-#include "writer/bitwriter.h"
 
 #define HYD_ALLOC(encoder, size) (encoder)->allocator.alloc_func((size), (encoder)->allocator.opaque)
 #define HYD_FREE(encoder, ptr) (encoder)->allocator.free_func((ptr), (encoder)->allocator.opaque)

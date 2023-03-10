@@ -10,9 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define HYDRIUM_LF_GROUP_DIM 2048
-#define HYDRIUM_HF_GROUP_DIM 256
-
 typedef enum HYDStatusCode {
     HYD_OK = 0,
     HYD_NEED_MORE_OUTPUT = -1,

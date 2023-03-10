@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "bitwriter.h"
 #include "internal.h"
-#include "libhydrium/color/xyb.h"
-#include "libhydrium/writer/bitwriter.h"
+#include "xyb.h"
 
 static const uint8_t level10_header[49] = {
     0x00, 0x00, 0x00, 0x0c,  'J',  'X',  'L',  ' ',
