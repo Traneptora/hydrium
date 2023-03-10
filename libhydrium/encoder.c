@@ -138,6 +138,12 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     return HYD_OK;
 }
 
+static HYDStatusCode write_lf_global(HYDEncoder *encoder) {
+    HYDBitWriter *bw = &encoder->working_writer;
+    // LF channel correlation AllDefault
+    hyd_write_bool(bw, 1);
+}
+
 static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
     HYDStatusCode ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_buffer,
@@ -149,6 +155,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     // Compute LF Coefficients
 
     // Output sections to working buffer
+    write_lf_global(encoder);
     // write TOC to main buffer
 
     ret = hyd_flush(encoder);

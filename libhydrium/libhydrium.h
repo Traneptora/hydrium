@@ -29,8 +29,6 @@ typedef struct HYDImageMetadata {
     size_t height;
     /* flag, false for sRGB input, true for linear input */
     int linear_light;
-    /* flag, false for 8bit, true for 16bit */
-    int deep;
 } HYDImageMetadata;
 
 /* opaque structure */
