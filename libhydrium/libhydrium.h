@@ -16,6 +16,7 @@ typedef enum HYDStatusCode {
     HYD_NEED_MORE_INPUT = -2,
     HYD_NOMEM = -3,
     HYD_API_ERROR = -4,
+    HYD_INTERNAL_ERROR = -5,
 } HYDStatusCode;
 
 typedef struct HYDAllocator {

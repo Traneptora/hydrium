@@ -13,7 +13,7 @@ int main(int argc, const char *argv[]) {
     uint64_t width, height;
     uint8_t *buffer, *output_buffer = NULL;
     HYDEncoder *encoder = hyd_encoder_new(NULL);
-    int ret = 1;
+    HYDStatusCode status = 1;
 
     if (!encoder)
         return ENOMEM;
@@ -55,7 +55,6 @@ int main(int argc, const char *argv[]) {
         for (uint32_t x = 0; x < tile_width; x++) {
             uint8_t *buff_offset = buffer + (y << 8) * width * 3 + (x << 8) * 3;
             const uint8_t *const rgb[3] = {buff_offset, buff_offset + 1, buff_offset + 2};
-            HYDStatusCode status;
             hyd_send_tile8(encoder, rgb, x, y, width * 3, 3);
             do {
                 size_t written;
@@ -71,7 +70,7 @@ int main(int argc, const char *argv[]) {
 
     fclose(stdout);
 
-    ret = 0;
+    status = 0;
 
 done:
     if (encoder)
@@ -81,5 +80,5 @@ done:
     if (output_buffer)
         free(output_buffer);
 
-    return ret;
+    return status;
 }

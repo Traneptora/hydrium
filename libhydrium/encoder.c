@@ -138,10 +138,94 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     return HYD_OK;
 }
 
-static HYDStatusCode write_lf_global(HYDEncoder *encoder) {
+static void write_lf_global(HYDEncoder *encoder) {
     HYDBitWriter *bw = &encoder->working_writer;
-    // LF channel correlation AllDefault
+
+    // LF channel correlation all_default
     hyd_write_bool(bw, 1);
+
+    // quantizer globalScale = 32768
+    hyd_write(bw, 0x17FFF, 18);
+    // quantizer quantLF = 64
+    hyd_write(bw, 0xFE, 10);
+    // HF Block Context all_default
+    hyd_write_bool(bw, 1);
+    // LF Channel Correlation all_default
+    hyd_write_bool(bw, 1);
+    // GlobalModular have_global_tree
+    hyd_write_bool(bw, 0);
+}
+
+static void write_lf_group(HYDEncoder *encoder) {
+    HYDBitWriter *bw = &encoder->working_writer;
+    // extra precision = 0
+    hyd_write(bw, 0, 2);
+    const int shift_factor[3] = {14, 11, 10};
+    
+}
+
+static int32_t cosine_lut[7][8] = {
+    {11362, 9632, 6436, 2260, -2260, -6436, -9632, -11362, },
+    {10703, 4433, -4433, -10703, -10703, -4433, 4433, 10703, },
+    {9632, -2260, -11362, -6436, 6436, 11362, 2260, -9632, },
+    {8192, -8192, -8192, 8192, 8192, -8192, -8192, 8192, },
+    {6436, -11362, 2260, 9632, -9632, -2260, 11362, -6436, },
+    {4433, -10703, 10703, -4433, -4433, 10703, -10703, 4433, },
+    {2260, -6436, 9632, -11362, 11362, -9632, 6436, -2260, },
+};
+
+static void swap_8x8(int32_t block[8][8]) {
+    for (size_t y = 1; y < 8; y++) {
+        for (size_t x = 0; x < y; x++) {
+            block[y][x] ^= block[x][y];
+            block[x][y] ^= block[y][x];
+            block[y][x] ^= block[x][y];
+        }
+    }
+}
+
+static void forward_dct(HYDEncoder *encoder) {
+    int32_t scratchblock[2][8][8];
+    size_t varblock_width = (encoder->group_width + 7) >> 3;
+    size_t varblock_height = (encoder->group_height + 7) >> 3;
+    for (size_t c = 0; c < 3; c++) {
+        for (size_t vy = 0; vy < varblock_height; vy++) {
+            size_t vy2 = vy << 3;
+            for (size_t vx = 0; vx < varblock_width; vx++) {
+                memset(scratchblock, 0, sizeof(scratchblock));
+                size_t vx2 = vx << 3;
+                for (size_t y = 0; y < 8; y++) {
+                    size_t by = vy2 + y;
+                    scratchblock[0][y][0] = encoder->xyb[c][by][vx2];
+                    for (size_t i = 1; i < 8; i++)
+                        scratchblock[0][y][0] += encoder->xyb[c][by][vx2 + i];
+                    scratchblock[0][y][0] >>= 3;
+                    for (size_t i = 1; i < 8; i++) {
+                        for (size_t n = 0; n < 8; n++)
+                            scratchblock[0][y][i] += encoder->xyb[c][by][vx2 + n] * cosine_lut[i - 1][n];
+                        scratchblock[0][y][i] >>= 16;
+                    }
+                }
+                swap_8x8(scratchblock[0]);
+                for (size_t y = 0; y < 8; y++) {
+                    scratchblock[1][y][0] = scratchblock[0][y][0];
+                    for (size_t i = 1; i < 8; i++)
+                        scratchblock[1][y][0] += scratchblock[0][y][i];
+                    scratchblock[1][y][0] >>= 3;
+                    for (size_t i = 1; i < 8; i++) {
+                        for (size_t n = 0; n < 8; n++)
+                            scratchblock[1][y][i] += scratchblock[0][y][n] * cosine_lut[i - 1][n];
+                        scratchblock[1][y][i] >>= 16;
+                    }
+                }
+                for (size_t y = 0; y < 8; y++) {
+                    size_t by = vy2 + y;
+                    for (size_t x = 0; x < 8; x++)
+                        encoder->xyb[c][by][vx2 + x] = scratchblock[1][x][y];
+                }
+            }
+        }
+    }
 }
 
 static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
@@ -150,12 +234,13 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
                                             sizeof(encoder->working_buffer), 0, 0);
     if (ret < 0)
         return ret;
+    encoder->copy_pos = 0;
 
-    // Run Forward DCT
-    // Compute LF Coefficients
+    forward_dct(encoder);
 
     // Output sections to working buffer
     write_lf_global(encoder);
+    write_lf_group(encoder);
     // write TOC to main buffer
 
     ret = hyd_flush(encoder);
@@ -185,10 +270,4 @@ HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3]
         return ret;
 
     return encode_xyb_buffer(encoder);
-}
-
-HYDStatusCode hyd_flush(HYDEncoder *encoder) {
-    // dummy stub
-
-    return hyd_bitwriter_flush(&encoder->writer);
 }

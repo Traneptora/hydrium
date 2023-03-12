@@ -1,4 +1,4 @@
-project('hydrium', 'c')
+project('hydrium', 'c', version : '0.0.1')
 
 libhydrium_sources = files(
     'libhydrium/libhydrium.c',

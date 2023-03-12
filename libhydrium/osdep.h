@@ -25,4 +25,6 @@ static inline int hyd_fllog2(unsigned long long n) {
 #endif /* _MSC_VER */
 #endif /* __GNUC__ || __clang__ */
 
+#define hyd_cllog2(n) hyd_fllog2(n) + !!((n) & ((n) - 1))
+
 #endif /* HYDRIUM_OSDEP_H_ */

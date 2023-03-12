@@ -83,3 +83,17 @@ HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written) {
     *written = encoder->writer.buffer_pos;
     return encoder->writer.overflow_state;
 }
+
+HYDStatusCode hyd_flush(HYDEncoder *encoder) {
+    hyd_bitwriter_flush(&encoder->writer);
+    size_t tocopy = encoder->writer.buffer_len - encoder->writer.buffer_pos;
+    if (tocopy > encoder->working_writer.buffer_pos - encoder->copy_pos)
+        tocopy = encoder->working_writer.buffer_pos - encoder->copy_pos;
+    memcpy(encoder->writer.buffer + encoder->writer.buffer_pos, encoder->working_buffer + encoder->copy_pos, tocopy);
+    encoder->writer.buffer_pos += tocopy;
+    encoder->copy_pos += tocopy;
+    if (encoder->copy_pos >= encoder->working_writer.buffer_pos)
+        return HYD_OK;
+    
+    return HYD_NEED_MORE_OUTPUT;
+}
