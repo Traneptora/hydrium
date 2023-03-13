@@ -160,7 +160,13 @@ static void write_lf_group(HYDEncoder *encoder) {
     HYDBitWriter *bw = &encoder->working_writer;
     // extra precision = 0
     hyd_write(bw, 0, 2);
-    const int shift_factor[3] = {14, 11, 10};
+    const int shift_factor[3] = {-1, 2, 3};
+    // use global tree
+    hyd_write_bool(bw, 0);
+    // wp_params all_default
+    hyd_write_bool(bw, 1);
+    // nb_transforms = 0
+    hyd_write(bw, 0, 2);
     
 }
 
