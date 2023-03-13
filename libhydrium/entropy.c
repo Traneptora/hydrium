@@ -12,7 +12,7 @@ void hyd_init_ans_stream(HYDAnsStream *stream, HYDBitWriter *bw) {
     stream->state = 0x13000;
 }
 
-HYDStatusCode hyd_set_cluster_map(HYDAnsStream *stream, const uint8_t *cluster_map, size_t num_dists) {
+HYDStatusCode hyd_write_cluster_map(HYDAnsStream *stream, const uint8_t *cluster_map, size_t num_dists) {
     if (num_dists > 256 || !num_dists)
         return HYD_INTERNAL_ERROR;
     stream->num_dists = num_dists;
@@ -45,4 +45,17 @@ HYDStatusCode hyd_set_cluster_map(HYDAnsStream *stream, const uint8_t *cluster_m
         hyd_write(bw, stream->cluster_map[i], nbits);
 
     return HYD_OK;
+}
+
+HYDStatusCode hyd_set_frequencies(HYDAnsStream *stream, const uint16_t *frequencies, int log_alphbet_size, const size_t *hybrid_symbol_size) {
+    HYDBitWriter *bw = stream->bw;
+    hyd_write(bw, log_alphbet_size - 5, 2);
+    for (size_t i = 0; i < stream->num_clusters; i++) {
+        size_t size = hybrid_symbol_size[i];
+        if (size <= log_alphbet_size) {
+            hyd_write(bw, log_alphbet_size, 1 + hyd_fllog2(log_alphbet_size));
+            continue;
+        }
+        hyd_write()
+    }
 }
