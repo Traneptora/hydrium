@@ -67,6 +67,7 @@ HYDStatusCode hyd_set_frequencies(HYDAnsStream *stream, const uint16_t **frequen
         for (size_t k = 0; k < alphabet_size; k++) {
             // simple dist and flat dist = 0
             hyd_write(bw, 0, 2);
+            // todo complex frequency output
         }
     }
 }
