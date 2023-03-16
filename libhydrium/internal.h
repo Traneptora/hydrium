@@ -7,8 +7,8 @@
 #include "bitwriter.h"
 #include "libhydrium.h"
 
-#define HYD_ALLOC(encoder, size) (encoder)->allocator.alloc_func((size), (encoder)->allocator.opaque)
-#define HYD_FREE(encoder, ptr) (encoder)->allocator.free_func((ptr), (encoder)->allocator.opaque)
+#define HYD_ALLOC(encoder, size) ((encoder)->allocator.alloc_func((size), (encoder)->allocator.opaque))
+#define HYD_FREE(encoder, ptr) if (ptr) {((encoder)->allocator.free_func((ptr), (encoder)->allocator.opaque)), (ptr) = NULL;}
 
 /* opaque structure */
 struct HYDEncoder {

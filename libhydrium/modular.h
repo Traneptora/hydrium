@@ -23,7 +23,7 @@ typedef struct HYDMADecisionNode {
 } HYDMADecisionNode;
 
 typedef struct {
-    HYDAnsStream *stream;
+    HYDEntropyStream *stream;
     size_t num_nodes;
     void *root_node;
 } HYDMATree;

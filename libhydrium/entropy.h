@@ -6,15 +6,26 @@
 
 #include "bitwriter.h"
 
-typedef struct HYDAnsStream {
-    HYDBitWriter *bw;
-    uint32_t state;
-    size_t num_dists;
-    uint8_t cluster_map[256];
-    size_t num_clusters;
-} HYDAnsStream;
+typedef struct HYDAnsToken {
+    uint8_t token;
+    uint8_t cluster;
+} HYDAnsToken;
 
-void hyd_init_ans_stream(HYDAnsStream *stream, HYDBitWriter *bw);
-HYDStatusCode hyd_write_cluster_map(HYDAnsStream *stream, const uint8_t *cluster_map, size_t num_dists);
+typedef struct HYDEntropyStream {
+    HYDEncoder *encoder;
+    size_t num_dists;
+    uint8_t *cluster_map;
+    size_t num_clusters;
+    size_t symbol_count;
+    size_t symbol_pos;
+    HYDAnsToken *tokens;
+    uint16_t *residues;
+    int log_alphabet_size;
+} HYDEntropyStream;
+
+HYDStatusCode hyd_init_entropy_stream(HYDEncoder *encoder, HYDEntropyStream *stream, size_t symbol_count,
+                                      const uint8_t *cluster_map, size_t num_dists);
+HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint16_t symbol);
+HYDStatusCode hyd_finalize_entropy_stream(HYDEntropyStream *stream);
 
 #endif /* HYD_ENTROPY_H_ */
