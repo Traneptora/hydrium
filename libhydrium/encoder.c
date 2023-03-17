@@ -167,7 +167,7 @@ static void write_lf_group(HYDEncoder *encoder) {
     hyd_write_bool(bw, 1);
     // nb_transforms = 0
     hyd_write(bw, 0, 2);
-    
+
 }
 
 static int32_t cosine_lut[7][8] = {

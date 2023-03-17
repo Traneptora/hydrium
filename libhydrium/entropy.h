@@ -26,11 +26,11 @@ typedef struct HYDEntropyStream {
     size_t symbol_pos;
     HYDAnsToken *tokens;
     HYDAnsResidue *residues;
-    int log_alphabet_size;
+    int alphabet_size;
 } HYDEntropyStream;
 
-HYDStatusCode hyd_init_entropy_stream(HYDAllocator *allocator, HYDBitWriter *bw, HYDEntropyStream *stream, size_t symbol_count,
-                                      const uint8_t *cluster_map, size_t num_dists);
+HYDStatusCode hyd_init_entropy_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
+                                      size_t symbol_count, const uint8_t *cluster_map, size_t num_dists);
 HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint16_t symbol);
 HYDStatusCode hyd_finalize_entropy_stream(HYDEntropyStream *stream);
 
