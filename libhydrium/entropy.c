@@ -12,6 +12,11 @@ typedef struct VLCElement {
     int length;
 } VLCElement;
 
+typedef struct StateFlush {
+    size_t token_index;
+    uint16_t value;
+} StateFlush;
+
 static const VLCElement ans_dist_prefix_lengths[14] = {
     {17, 5}, {11, 4}, {15, 4}, {3, 4}, {9, 4},  {7, 4},  {4, 3},
     {2, 3},  {5, 3},  {6, 3},  {0, 3}, {33, 6}, {1, 7}, {65, 7},
@@ -38,7 +43,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream, const uint8_t *
     if (stream->num_clusters > num_dists)
         return HYD_INTERNAL_ERROR;
     
-    HYDBitWriter *bw = &stream->encoder->working_writer;
+    HYDBitWriter *bw = stream->bw;
 
     // lz77 = false
     hyd_write_bool(bw, 0);
@@ -62,7 +67,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream, const uint8_t *
 }
 
 static void write_hybrid_uint_configs(HYDEntropyStream *stream, int log_alphabet_size) {
-    HYDBitWriter *bw = &stream->encoder->working_writer;
+    HYDBitWriter *bw = stream->bw;
     for (size_t i = 0; i < stream->num_clusters; i++) {
         // split_exponent
         hyd_write(bw, 4, 1 + hyd_fllog2(log_alphabet_size));
@@ -74,7 +79,7 @@ static void write_hybrid_uint_configs(HYDEntropyStream *stream, int log_alphabet
 
 static void write_ans_frequencies(HYDEntropyStream *stream, size_t *frequencies) {
     size_t alphabet_size = sizeof(char) << stream->log_alphabet_size;
-    HYDBitWriter *bw = &stream->encoder->working_writer;
+    HYDBitWriter *bw = stream->bw;
     for (size_t i = 0; i < stream->num_clusters; i++) {
         size_t total = 0;
         for (size_t k = 0; k < alphabet_size; k++)
@@ -107,11 +112,11 @@ static void write_ans_frequencies(HYDEntropyStream *stream, size_t *frequencies)
     }
 }
 
-HYDStatusCode hyd_init_entropy_stream(HYDEncoder *encoder, HYDEntropyStream *stream, size_t symbol_count,
+HYDStatusCode hyd_init_entropy_stream(HYDAllocator *allocator, HYDBitWriter *bw, HYDEntropyStream *stream, size_t symbol_count,
                                       const uint8_t *cluster_map, size_t num_dists) {
     memset(stream, 0, sizeof(HYDEntropyStream));
-    stream->encoder = encoder;
-    stream->symbol_count = symbol_count;
+    stream->allocator = allocator;
+    stream->init_symbol_count = symbol_count;
     stream->cluster_map = HYD_ALLOC(encoder, num_dists);
     if (!stream->cluster_map)
         return HYD_NOMEM;
@@ -131,21 +136,23 @@ HYDStatusCode hyd_init_entropy_stream(HYDEncoder *encoder, HYDEntropyStream *str
 }
 
 HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint16_t symbol) {
-    uint8_t token;
-    uint16_t residue;
+    HYDAnsToken token;
+    HYDAnsResidue residue;
+    token.cluster = stream->cluster_map[dist];
     if (symbol < 16) {
-        token = symbol;
-        residue = 0;
+        token.token = symbol;
+        residue.residue = 0;
+        residue.bits = 0;
     } else  {
         int n = hyd_fllog2(symbol) - 4;
-        token = 16 + (((symbol >> n) & 0xF) | (n << 4));
-        residue = ~(~UINT16_C(0) << n) & symbol;
+        token.token = 16 + (((symbol >> n) & 0xF) | (n << 4));
+        residue.residue = ~(~UINT16_C(0) << n) & symbol;
+        residue.bits = n;
     }
-    HYDAnsToken clustered_token = {token, stream->cluster_map[dist]};
-    stream->tokens[stream->symbol_pos] = clustered_token;
+    stream->tokens[stream->symbol_pos] = token;
     stream->residues[stream->symbol_pos++] = residue;
-    if (token >= (1 << stream->log_alphabet_size))
-        stream->log_alphabet_size = 1 + hyd_fllog2(token);
+    if (token.token >= (1 << stream->log_alphabet_size))
+        stream->log_alphabet_size = 1 + hyd_fllog2(token.token);
 }
 
 static void generate_alias_mapping(const size_t *frequencies, uint16_t *cutoffs, uint16_t *offsets, uint16_t *symbols,
@@ -191,38 +198,53 @@ static void generate_alias_mapping(const size_t *frequencies, uint16_t *cutoffs,
 
 HYDStatusCode hyd_finalize_entropy_stream(HYDEntropyStream *stream) {
     HYDStatusCode ret = HYD_OK;
-    HYDBitWriter *bw = &stream->encoder->working_writer;
+    HYDBitWriter *bw = stream->bw;
     if (stream->log_alphabet_size < 5)
         stream->log_alphabet_size = 5;
     size_t alphabet_size = sizeof(char) << stream->log_alphabet_size;
     hyd_write(bw, stream->log_alphabet_size - 5, 2);
     write_hybrid_uint_configs(stream, stream->log_alphabet_size);
-    size_t freq_size = stream->num_clusters * alphabet_size * sizeof(size_t);
+
+    /* allocate buffers */
+    size_t buffer_size = stream->num_clusters * alphabet_size;
+    size_t freq_size = buffer_size * sizeof(size_t);
     size_t *frequencies = HYD_ALLOC(stream->encoder, freq_size);
-    uint16_t *cutoffs = HYD_ALLOC(stream->encoder, stream->num_clusters * alphabet_size * sizeof(uint16_t));
-    uint16_t *offsets = HYD_ALLOC(stream->encoder, stream->num_clusters * alphabet_size * sizeof(uint16_t));
-    uint16_t *symbols = HYD_ALLOC(stream->encoder, stream->num_clusters * alphabet_size * sizeof(uint16_t));
-    if (!frequencies || !cutoffs || !offsets || !symbols) {
+    /* reduce system time by shaving off mallocs */
+    uint8_t *cutoffs = HYD_ALLOC(stream->encoder, 3 * buffer_size);
+    if (!frequencies || !cutoffs) {
         ret = HYD_NOMEM;
         goto end;
     }
+    uint8_t *offsets = cutoffs + buffer_size;
+    uint8_t *symbols = offsets + buffer_size;
+
+    /* populate frequencies */
     memset(frequencies, 0, freq_size);
     for (size_t pos = 0; pos < stream->symbol_pos; pos++)
         frequencies[stream->tokens[pos].cluster * alphabet_size + stream->tokens[pos].token]++;
     write_ans_frequencies(stream, frequencies);
+
+    /* generate alias mappings */
     for (size_t i = 0; i < stream->num_clusters; i++) {
         size_t offset = i * alphabet_size;
         generate_alias_mapping(frequencies + offset, cutoffs + offset, offsets + offset, symbols + offset, stream->log_alphabet_size);
     }
+
     uint32_t state = 0x130000;
     uint16_t log_bucket_size = 12 - stream->log_alphabet_size;
     uint16_t pos_mask = ~(~UINT16_C(0) << log_bucket_size);
+    StateFlush *flushes = HYD_ALLOCA(stream->allocator, stream->symbol_pos * sizeof(StateFlush));
+    if (!flushes) {
+        ret = HYD_NOMEM;
+        goto end;
+    }
+    size_t flush_pos = 0;
     for (size_t p = stream->symbol_pos; p >= 0; p--) {
         uint8_t symbol = stream->tokens[p].token;
         uint8_t cluster = stream->tokens[p].cluster;
         uint16_t freq = frequencies[cluster * alphabet_size + symbol];
         if ((state >> 20) >= freq) {
-            hyd_write(bw, state, 16);
+            flushes[flush_pos++] = (StateFlush){p, state & 0xFFFF};
             state >>= 16;
         }
         uint16_t offset = state % freq;
@@ -241,16 +263,24 @@ HYDStatusCode hyd_finalize_entropy_stream(HYDEntropyStream *stream) {
         }
         state = ((state / freq) << 12) + ((i << log_bucket_size) | (pos & pos_mask));
     }
-    hyd_write(bw, state, 32);
-    // TODO hybrid integer
+    flushes[flush_pos++] = (StateFlush){0, state & 0xFFFF};
+    flushes[flush_pos++] = (StateFlush){0, (state >> 16) & 0xFFFF};
+    size_t flush_count = flush_pos;
+    flush_pos = 0;
+    for (size_t p = 0; p < stream->symbol_pos; p++) {
+        while (p >= flushes[flush_count - 1].token_index) {
+            hyd_write(bw, flushes[flush_pos++].value, 16);
+            flush_count--;
+        }
+        hyd_write(bw, stream->residues[p].residue, stream->residues[p].bits);
+    }
 
 end:
-    HYD_FREE(stream->encoder, cutoffs);
-    HYD_FREE(stream->encoder, offsets);
-    HYD_FREE(stream->encoder, symbols);
-    HYD_FREE(stream->encoder, frequencies);
-    HYD_FREE(stream->encoder, stream->cluster_map);
-    HYD_FREE(stream->encoder, stream->tokens);
-    HYD_FREE(stream->encoder, stream->residues);
+    HYD_FREEA(stream->encoder, flushes);
+    HYD_FREEA(stream->encoder, cutoffs);
+    HYD_FREEA(stream->encoder, frequencies);
+    HYD_FREEA(stream->encoder, stream->cluster_map);
+    HYD_FREEA(stream->encoder, stream->tokens);
+    HYD_FREEA(stream->encoder, stream->residues);
     return ret;
 }
