@@ -6,7 +6,9 @@
 #include <string.h>
 
 #include "bitwriter.h"
+#include "entropy.h"
 #include "internal.h"
+#include "osdep.h"
 #include "xyb.h"
 
 static const uint8_t level10_header[49] = {
@@ -145,9 +147,9 @@ static void write_lf_global(HYDEncoder *encoder) {
     hyd_write_bool(bw, 1);
 
     // quantizer globalScale = 32768
-    hyd_write(bw, 0x17FFF, 18);
+    hyd_write_u32(bw, (const uint32_t[4]){1, 2049, 4097, 8193}, (const uint32_t[4]){11, 11, 12, 16}, 32768);
     // quantizer quantLF = 64
-    hyd_write(bw, 0xFE, 10);
+    hyd_write_u32(bw, (const uint32_t[4]){16, 1, 1, 1}, (const uint32_t[4]){0, 5, 8, 16}, 64);
     // HF Block Context all_default
     hyd_write_bool(bw, 1);
     // LF Channel Correlation all_default
@@ -158,16 +160,60 @@ static void write_lf_global(HYDEncoder *encoder) {
 
 static void write_lf_group(HYDEncoder *encoder) {
     HYDBitWriter *bw = &encoder->working_writer;
+    const int shift[3] = {-1, 2, 3};
     // extra precision = 0
     hyd_write(bw, 0, 2);
-    const int shift_factor[3] = {-1, 2, 3};
     // use global tree
     hyd_write_bool(bw, 0);
     // wp_params all_default
     hyd_write_bool(bw, 1);
     // nb_transforms = 0
     hyd_write(bw, 0, 2);
-
+    HYDEntropyStream stream;
+    hyd_init_entropy_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[]){0, 0, 0, 0, 0, 0}, 6);
+    // property = -1
+    hyd_ans_send_symbol(&stream, 1, 0);
+    // predictor = 5
+    hyd_ans_send_symbol(&stream, 2, 5);
+    // offset = 0
+    hyd_ans_send_symbol(&stream, 3, 0);
+    // mul_log = 0
+    hyd_ans_send_symbol(&stream, 4, 0);
+    // mul_bits = 0
+    hyd_ans_send_symbol(&stream, 5, 0);
+    hyd_finalize_entropy_stream(&stream);
+    size_t varblock_width = (encoder->group_width + 7) >> 3;
+    size_t varblock_height = (encoder->group_height + 7) >> 3;
+    hyd_init_entropy_stream(&stream, &encoder->allocator, bw, 3 * varblock_width * varblock_height, (const uint8_t[1]){0}, 1);
+    for (int i = 0; i < 3; i++) {
+        int c = i < 2 ? 1 - i : i;
+        for (size_t y = 0; y < varblock_height; y++) {
+            for (size_t x = 0; x < varblock_width; x++) {
+                size_t xv = x << 3;
+                size_t yv = y << 3;
+                int16_t w = xv > 0 ? encoder->xyb[c][yv][xv - 1] : y > 0 ? encoder->xyb[c][yv - 1][xv] : 0;
+                int16_t n = yv > 0 ? encoder->xyb[c][yv - 1][xv] : w;
+                int16_t nw = xv > 0 && yv > 0 ? encoder->xyb[c][yv - 1][xv - 1] : w;
+                int16_t v = w + n - nw;
+                int16_t min = w < n ? w : n;
+                int16_t max = w < n ? n : w;
+                v = v < min ? min : v > max ? max : v;
+                int16_t q = shift[i] < 0 ? encoder->xyb[c][yv][xv] >> -shift[i] : encoder->xyb[c][yv][xv] << shift[i];
+                int16_t diff = v - q;
+                hyd_ans_send_symbol(&stream, 0, diff >= 0 ? diff << 1 : (-diff << 1) - 1);
+            }
+        }
+    }
+    hyd_finalize_entropy_stream(&stream);
+    size_t nb_blocks = varblock_width * varblock_height;
+    hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
+    hyd_init_entropy_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[]){0, 0, 0, 0, 0, 0}, 6);
+    hyd_ans_send_symbol(&stream, 1, 0);
+    hyd_ans_send_symbol(&stream, 2, 0);
+    hyd_ans_send_symbol(&stream, 3, 0);
+    hyd_ans_send_symbol(&stream, 4, 0);
+    hyd_ans_send_symbol(&stream, 5, 0);
+    hyd_finalize_entropy_stream(&stream);
 }
 
 static int32_t cosine_lut[7][8] = {
@@ -248,6 +294,10 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     write_lf_global(encoder);
     write_lf_group(encoder);
     // write TOC to main buffer
+    hyd_bitwriter_flush(&encoder->working_writer);
+    hyd_write_zero_pad(&encoder->writer);
+    hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712}, (const uint32_t[4]){10, 14, 22, 30}, encoder->working_writer.buffer_pos);
+    hyd_write_zero_pad(&encoder->writer);
 
     ret = hyd_flush(encoder);
     encoder->wrote_frame_header = 0;
