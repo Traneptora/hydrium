@@ -23,7 +23,7 @@ static const VLCElement ans_dist_prefix_lengths[14] = {
 };
 
 static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
-    hyd_write_bool(bw, !!b);
+    hyd_write_bool(bw, b);
     if (!b)
         return bw->overflow_state;
     int l = hyd_fllog2(b);
