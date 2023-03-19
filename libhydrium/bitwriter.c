@@ -51,12 +51,12 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
 }
 
 HYDStatusCode hyd_write_zero_pad(HYDBitWriter *bw) {
-    bw->cache_bits += 7 - (bw->cache_bits + 7) % 8;
+    hyd_write(bw, 0, 7 - (bw->cache_bits + 7) % 8);
     return bw->overflow_state;
 }
 
 HYDStatusCode hyd_write_bool(HYDBitWriter *bw, int flag) {
-    return hyd_write(bw, flag, 1);
+    return hyd_write(bw, !!flag, 1);
 }
 
 HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const uint32_t c[4], const uint32_t u[4], uint32_t value) {

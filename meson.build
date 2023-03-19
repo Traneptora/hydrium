@@ -5,7 +5,6 @@ libhydrium_sources = files(
     'libhydrium/encoder.c',
     'libhydrium/entropy.c',
     'libhydrium/libhydrium.c',
-    'libhydrium/modular.c',
     'libhydrium/xyb.c',
 )
 

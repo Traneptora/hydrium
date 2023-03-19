@@ -45,7 +45,7 @@ int main(int argc, const char *argv[]) {
     HYDImageMetadata metadata;
     metadata.width = width;
     metadata.height = height;
-    metadata.linear_light = 0;
+    metadata.linear_light = 1;
 
     hyd_set_metadata(encoder, &metadata);
     hyd_provide_output_buffer(encoder, output_buffer, bufsize);

@@ -12,11 +12,13 @@
 
 typedef enum HYDStatusCode {
     HYD_OK = 0,
-    HYD_NEED_MORE_OUTPUT = -1,
-    HYD_NEED_MORE_INPUT = -2,
-    HYD_NOMEM = -3,
-    HYD_API_ERROR = -4,
-    HYD_INTERNAL_ERROR = -5,
+    HYD_DEFAULT = -1,
+    HYD_ERROR_START = -10,
+    HYD_NEED_MORE_OUTPUT = -11,
+    HYD_NEED_MORE_INPUT = -12,
+    HYD_NOMEM = -13,
+    HYD_API_ERROR = -14,
+    HYD_INTERNAL_ERROR = -15,
 } HYDStatusCode;
 
 typedef struct HYDAllocator {

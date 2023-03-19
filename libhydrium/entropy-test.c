@@ -24,10 +24,10 @@ int main(void) {
     allocator.free_func = &free2;
     allocator.opaque = NULL;
     hyd_init_bit_writer(&bw, buffer, sizeof(buffer), 0, 0);
-    hyd_init_entropy_stream(&stream, &allocator, &bw, 256, (const uint8_t[1]){0}, 1);
+    hyd_ans_init_stream(&stream, &allocator, &bw, 256, (const uint8_t[1]){0}, 1);
     for (int i = 0; i < 256; i++)
         hyd_ans_send_symbol(&stream, 0, hyd_fllog2(1 + i));
-    hyd_finalize_entropy_stream(&stream);
+    hyd_ans_finalize_stream(&stream);
     hyd_bitwriter_flush(&bw);
     fwrite(buffer, bw.buffer_pos, 1, stdout);
     fclose(stdout);
