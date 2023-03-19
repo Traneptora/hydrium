@@ -144,6 +144,8 @@ static int16_t write_ans_frequencies(HYDEntropyStream *stream, size_t *frequenci
         if (!frequencies[k])
             continue;
         frequencies[k] = ((frequencies[k] << 12) / total) & 0xFFFF;
+        if (!frequencies[k])
+            frequencies[k] = 1;
         new_total += frequencies[k];
         if (first_pos < 0)
             first_pos = k;
@@ -248,7 +250,7 @@ HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint16_
     }
     stream->tokens[stream->symbol_pos] = token;
     stream->residues[stream->symbol_pos++] = residue;
-    if (token.token + 1 >= stream->alphabet_size)
+    if (token.token >= stream->alphabet_size)
         stream->alphabet_size = 1 + token.token;
     if (stream->symbol_pos > stream->init_symbol_count)
         return HYD_INTERNAL_ERROR;

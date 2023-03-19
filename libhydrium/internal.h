@@ -20,7 +20,7 @@ struct HYDEncoder {
 
     /* 256x256 tile */
     int16_t xyb[3][256][256];
-    uint8_t working_buffer[262144];
+    uint8_t working_buffer[528288];
 
     uint8_t *out;
     size_t out_pos;
@@ -34,6 +34,8 @@ struct HYDEncoder {
     size_t group_y;
     size_t group_width;
     size_t group_height;
+    size_t varblock_width;
+    size_t varblock_height;
 
     int wrote_header;
     int wrote_frame_header;
