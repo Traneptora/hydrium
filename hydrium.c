@@ -51,7 +51,7 @@ int main(int argc, const char *argv[]) {
     metadata.linear_light = 0;
 
     if (argc > 2) {
-        fp = fopen(argv[2], "w");
+        fp = fopen(argv[2], "wb");
         if (!fp) {
             fprintf(stderr, "%s: error opening file for writing: %s\n", argv[0], argv[2]);
             goto done;
