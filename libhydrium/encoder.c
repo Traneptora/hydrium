@@ -87,8 +87,6 @@ static const int32_t hf_quant_weights[3][64] = {
     },
 };
 
-static const int16_t hf_mult = 8;
-
 static HYDStatusCode write_header(HYDEncoder *encoder) {
 
     HYDBitWriter *bw = &encoder->writer;
@@ -242,7 +240,7 @@ static HYDStatusCode write_lf_global(HYDEncoder *encoder) {
     return hyd_write_bool(bw, 0);
 }
 
-static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
+static HYDStatusCode write_lf_group(HYDEncoder *encoder, uint16_t *hf_mult) {
     HYDStatusCode ret;
     HYDBitWriter *bw = &encoder->working_writer;
     // extra precision = 0
@@ -302,14 +300,12 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
     if ((ret = hyd_ans_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
     hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
-    hyd_write_bool(bw, 0);
-    hyd_write_bool(bw, 1);
-    hyd_write(bw, 0, 2);
+    hyd_write(bw, 0x2, 4);
     ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[6]){0, 0, 0, 0, 0, 0}, 6);
     if (ret < HYD_ERROR_START)
         return ret;
     hyd_ans_send_symbol(&stream, 1, 0);
-    hyd_ans_send_symbol(&stream, 2, 5);
+    hyd_ans_send_symbol(&stream, 2, 0);
     hyd_ans_send_symbol(&stream, 3, 0);
     hyd_ans_send_symbol(&stream, 4, 0);
     hyd_ans_send_symbol(&stream, 5, 0);
@@ -320,12 +316,13 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
     size_t cfl_width = (encoder->varblock_width + 7) >> 3;
     size_t cfl_height = (encoder->varblock_height + 7) >> 3;
     size_t num_z_pre = 2 * cfl_width * cfl_height + nb_blocks;
-    size_t num_zeroes = num_z_pre + 2 * nb_blocks;
-    hyd_ans_init_stream(&stream, &encoder->allocator, bw, num_zeroes, (const uint8_t[1]){0}, 1);
+    size_t num_sym = num_z_pre + 2 * nb_blocks;
+    hyd_ans_init_stream(&stream, &encoder->allocator, bw, num_sym, (const uint8_t[1]){0}, 1);
     for (size_t i = 0; i < num_z_pre; i++)
         hyd_ans_send_symbol(&stream, 0, 0);
-    hyd_ans_send_symbol(&stream, 0, (hf_mult - 1) << 1);
-    for (size_t i = 1; i < (nb_blocks << 1); i++)
+    for (size_t i = 0; i < nb_blocks; i++)
+        hyd_ans_send_symbol(&stream, 0, (hf_mult[i] - 1) << 1);
+    for (size_t i = 0; i < nb_blocks; i++)
         hyd_ans_send_symbol(&stream, 0, 0);
     if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
         return ret;
@@ -395,39 +392,20 @@ static size_t get_non_zero_context(size_t predicted, size_t block_context) {
     return block_context + 15 * (4 + (predicted >> 1));
 }
 
-static int16_t hf_quant(int32_t value, int32_t weight) {
+static int16_t hf_quant(int32_t value, int32_t weight, uint16_t hf_mult) {
     if (value < 0)
-        return -hf_quant(-value, weight);
+        return -hf_quant(-value, weight, hf_mult);
 
     return (value * weight * hf_mult) >> 14;
 }
 
-static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder) {
+static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes, uint8_t non_zeroes[3][32][32]) {
     HYDEntropyStream stream;
     HYDStatusCode ret;
     const uint8_t map[7425] = { 0 };
-    size_t num_syms = 3 * encoder->varblock_width * encoder->varblock_height * 64;
-    uint8_t non_zeroes[3][32][32] = { 0 };
-    IntPos pos;
-    for (size_t by = 0; by < encoder->varblock_height; by++) {
-        size_t vy = by << 3;
-        for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
-            size_t vx = bx << 3;
-            for (int i = 0; i < 3; i++) {
-                for (int j = 1; j < 64; j++) {
-                    pos = natural_order[j];
-                    encoder->xyb[i][vy + pos.y][vx + pos.x] =
-                        hf_quant(encoder->xyb[i][vy + pos.y][vx + pos.x], hf_quant_weights[i][j]);
-                    if (encoder->xyb[i][vy + pos.y][vx + pos.x])
-                        non_zeroes[i][by][bx]++;
-                }
-            }
-        }
-    }
-
+    size_t num_syms = 3 * encoder->varblock_width * encoder->varblock_height + num_non_zeroes;
     hyd_ans_init_stream(&stream, &encoder->allocator, &encoder->working_writer,
                         num_syms, map, 7425);
-
     for (size_t by = 0; by < encoder->varblock_height; by++) {
         size_t vy = by << 3;
         for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
@@ -443,7 +421,7 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder) {
                     continue;
                 size_t hist_context = 458 * block_context + 37 * 15;
                 for (int k = 0; k < 63; k++) {
-                    pos = natural_order[k + 1];
+                    IntPos pos = natural_order[k + 1];
                     IntPos prev_pos = natural_order[k];
                     int prev = k ? !!encoder->xyb[c][vy + prev_pos.y][vx + prev_pos.x]
                         : non_zeroes[c][by][bx] <= 4;
@@ -477,17 +455,45 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
     forward_dct(encoder);
 
+    uint8_t non_zeroes[3][32][32] = { 0 };
+    uint16_t hf_mult[1024];
+    size_t num_non_zeroes = 0;
+    for (size_t by = 0; by < encoder->varblock_height; by++) {
+        size_t vy = by << 3;
+        for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
+            size_t vx = bx << 3;
+            int32_t avg = (((encoder->xyb[1][vy + 7][vx + 7] + encoder->xyb[2][vy + 7][vx + 7]) << 1)
+                + encoder->xyb[1][vy + 7][vx + 6] + encoder->xyb[1][vy + 6][vx + 7]
+                + encoder->xyb[2][vy + 7][vx + 6] + encoder->xyb[2][vy + 6][vx + 7]) >> 3;
+            hf_mult[by * 32 + bx] = 8 + hyd_fllog2(avg & 0x7FFF);
+            //hf_mult[by * encoder->varblock_width + bx] = 16;
+            for (int i = 0; i < 3; i++) {
+                size_t nzc = 0;
+                for (int j = 1; j < 64; j++) {
+                    IntPos pos = natural_order[j];
+                    encoder->xyb[i][vy + pos.y][vx + pos.x] =
+                        hf_quant(encoder->xyb[i][vy + pos.y][vx + pos.x], hf_quant_weights[i][j], hf_mult[by * encoder->varblock_width + bx]);
+                    if (encoder->xyb[i][vy + pos.y][vx + pos.x]) {
+                        non_zeroes[i][by][bx]++;
+                        nzc = j;
+                    }
+                }
+                num_non_zeroes += nzc;
+            }
+        }
+    }
+
     // Output sections to working buffer
     if ((ret = write_lf_global(encoder)) < HYD_ERROR_START)
         return ret;
-    if ((ret = write_lf_group(encoder)) < HYD_ERROR_START)
+    if ((ret = write_lf_group(encoder, hf_mult)) < HYD_ERROR_START)
         return ret;
     // default params HFGlobal
     hyd_write_bool(&encoder->working_writer, 1);
     // write HF Pass order
     hyd_write(&encoder->working_writer, 2, 2);
 
-    if ((ret = write_hf_coeffs(encoder)) < HYD_ERROR_START)
+    if ((ret = write_hf_coeffs(encoder, num_non_zeroes, non_zeroes)) < HYD_ERROR_START)
         return ret;
 
     // write TOC to main buffer
