@@ -87,6 +87,8 @@ static const int32_t hf_quant_weights[3][64] = {
     },
 };
 
+static const int16_t hf_mult = 8;
+
 static HYDStatusCode write_header(HYDEncoder *encoder) {
 
     HYDBitWriter *bw = &encoder->writer;
@@ -132,13 +134,17 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
      * all_default = 0:1
      * frame_type = 0:2
      * encoding = 0:1
-     * flags = 0:2
+     */
+    hyd_write(bw, 0, 4);
+    /* flags = kSkipAdaptiveLFSmoothing */
+    hyd_write_u64(bw, 0x80);
+    /*
      * upsampling = 0:2
      * x_qm_scale = 3:3
      * b_qm_scale = 2:3
      * num_passes = 0:2
      */
-    hyd_write(bw, 0x1300, 16);
+    hyd_write(bw, 0x4C, 10);
 
     int is_last = (encoder->group_x + 1) << 8 >= encoder->metadata.width
         && (encoder->group_y + 1) << 8 >= encoder->metadata.height;
@@ -276,6 +282,8 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
             for (size_t x = 0; x < encoder->varblock_width; x++) {
                 size_t xv = x << 3;
                 size_t yv = y << 3;
+                encoder->xyb[c][yv][xv] = shift[c] >= 0 ? encoder->xyb[c][yv][xv] << shift[c]
+                    : encoder->xyb[c][yv][xv] >> -shift[c];
                 int32_t w = xv > 0 ? encoder->xyb[c][yv][xv - 8] : y > 0 ? encoder->xyb[c][yv - 8][xv] : 0;
                 int32_t n = yv > 0 ? encoder->xyb[c][yv - 8][xv] : w;
                 int32_t nw = xv > 0 && yv > 0 ? encoder->xyb[c][yv - 8][xv - 8] : w;
@@ -284,7 +292,6 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
                 int32_t max = w < n ? n : w;
                 v = v < min ? min : v > max ? max : v;
                 int32_t diff = encoder->xyb[c][yv][xv] - v;
-                diff = shift[c] >= 0 ? diff << shift[c] : diff >> -shift[c];
                 uint32_t packed_diff = diff >= 0 ? diff << 1 : (-diff << 1) - 1;
                 hyd_ans_send_symbol(&stream, 0, packed_diff);
             }
@@ -302,7 +309,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
     if (ret < HYD_ERROR_START)
         return ret;
     hyd_ans_send_symbol(&stream, 1, 0);
-    hyd_ans_send_symbol(&stream, 2, 0);
+    hyd_ans_send_symbol(&stream, 2, 5);
     hyd_ans_send_symbol(&stream, 3, 0);
     hyd_ans_send_symbol(&stream, 4, 0);
     hyd_ans_send_symbol(&stream, 5, 0);
@@ -317,9 +324,8 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
     hyd_ans_init_stream(&stream, &encoder->allocator, bw, num_zeroes, (const uint8_t[1]){0}, 1);
     for (size_t i = 0; i < num_z_pre; i++)
         hyd_ans_send_symbol(&stream, 0, 0);
-    for (size_t i = 0; i < nb_blocks; i++)
-        hyd_ans_send_symbol(&stream, 0, 63);
-    for (size_t i = 0; i < nb_blocks; i++)
+    hyd_ans_send_symbol(&stream, 0, (hf_mult - 1) << 1);
+    for (size_t i = 1; i < (nb_blocks << 1); i++)
         hyd_ans_send_symbol(&stream, 0, 0);
     if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
         return ret;
@@ -389,11 +395,11 @@ static size_t get_non_zero_context(size_t predicted, size_t block_context) {
     return block_context + 15 * (4 + (predicted >> 1));
 }
 
-static int32_t hf_quant(int32_t value, int32_t weight) {
+static int16_t hf_quant(int32_t value, int32_t weight) {
     if (value < 0)
         return -hf_quant(-value, weight);
 
-    return (value * weight) >> 9;
+    return (value * weight * hf_mult) >> 14;
 }
 
 static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder) {
@@ -410,7 +416,9 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder) {
             for (int i = 0; i < 3; i++) {
                 for (int j = 1; j < 64; j++) {
                     pos = natural_order[j];
-                    if (hf_quant(encoder->xyb[i][vy + pos.y][vx + pos.x], hf_quant_weights[i][j]))
+                    encoder->xyb[i][vy + pos.y][vx + pos.x] =
+                        hf_quant(encoder->xyb[i][vy + pos.y][vx + pos.x], hf_quant_weights[i][j]);
+                    if (encoder->xyb[i][vy + pos.y][vx + pos.x])
                         non_zeroes[i][by][bx]++;
                 }
             }
@@ -442,7 +450,6 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder) {
                     size_t coeff_context = hist_context + prev +
                         ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k]) << 1);
                     int32_t value = encoder->xyb[c][vy + pos.y][vx + pos.x];
-                    value = hf_quant(value, hf_quant_weights[c][k + 1]);
                     ret = hyd_ans_send_symbol(&stream, coeff_context, value >= 0 ? value << 1 : (-value << 1) - 1);
                     if (ret < HYD_ERROR_START)
                         return ret;
