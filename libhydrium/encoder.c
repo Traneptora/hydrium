@@ -318,7 +318,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder) {
     for (size_t i = 0; i < num_z_pre; i++)
         hyd_ans_send_symbol(&stream, 0, 0);
     for (size_t i = 0; i < nb_blocks; i++)
-        hyd_ans_send_symbol(&stream, 0, 64);
+        hyd_ans_send_symbol(&stream, 0, 63);
     for (size_t i = 0; i < nb_blocks; i++)
         hyd_ans_send_symbol(&stream, 0, 0);
     if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
