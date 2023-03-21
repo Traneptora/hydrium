@@ -10,6 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define HYDRIUM_VERSION_INT 0x1000001001
+#define HYDRIUM_VERSION_STRING "0.1.1"
+
 typedef enum HYDStatusCode {
     HYD_OK = 0,
     HYD_DEFAULT = -1,
