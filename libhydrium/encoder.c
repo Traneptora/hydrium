@@ -252,7 +252,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, uint16_t *hf_mult) {
     // nb_transforms = 0
     hyd_write(bw, 0, 2);
     HYDEntropyStream stream;
-    ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[6]){0, 0, 0, 0, 0, 0}, 6);
+    ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[6]){0, 0, 0, 0, 0, 0}, 6, 0);
     if (ret < HYD_ERROR_START)
         return ret;
     // property = -1
@@ -270,9 +270,10 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, uint16_t *hf_mult) {
     if ((ret = hyd_ans_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
     size_t nb_blocks = encoder->varblock_width * encoder->varblock_height;
-    ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, (const uint8_t[1]){0}, 1);
+    ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, (const uint8_t[1]){0}, 1, 1);
     if (ret < HYD_ERROR_START)
         return ret;
+    hyd_set_hybrid_uint_config(&stream, 0, 1, 4, 1, 0);
     const int shift[3] = {3, 0, -1};
     for (int i = 0; i < 3; i++) {
         int c = i < 2 ? 1 - i : i;
@@ -290,8 +291,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, uint16_t *hf_mult) {
                 int32_t max = w < n ? n : w;
                 v = v < min ? min : v > max ? max : v;
                 int32_t diff = encoder->xyb[c][yv][xv] - v;
-                uint32_t packed_diff = diff >= 0 ? diff << 1 : (-diff << 1) - 1;
-                hyd_ans_send_symbol(&stream, 0, packed_diff);
+                hyd_ans_send_symbol(&stream, 0, hyd_pack_signed(diff));
             }
         }
     }
@@ -301,7 +301,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, uint16_t *hf_mult) {
         return ret;
     hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
     hyd_write(bw, 0x2, 4);
-    ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[6]){0, 0, 0, 0, 0, 0}, 6);
+    ret = hyd_ans_init_stream(&stream, &encoder->allocator, bw, 5, (const uint8_t[6]){0, 0, 0, 0, 0, 0}, 6, 0);
     if (ret < HYD_ERROR_START)
         return ret;
     hyd_ans_send_symbol(&stream, 1, 0);
@@ -317,7 +317,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, uint16_t *hf_mult) {
     size_t cfl_height = (encoder->varblock_height + 7) >> 3;
     size_t num_z_pre = 2 * cfl_width * cfl_height + nb_blocks;
     size_t num_sym = num_z_pre + 2 * nb_blocks;
-    hyd_ans_init_stream(&stream, &encoder->allocator, bw, num_sym, (const uint8_t[1]){0}, 1);
+    hyd_ans_init_stream(&stream, &encoder->allocator, bw, num_sym, (const uint8_t[1]){0}, 1, 0);
     for (size_t i = 0; i < num_z_pre; i++)
         hyd_ans_send_symbol(&stream, 0, 0);
     for (size_t i = 0; i < nb_blocks; i++)
@@ -403,7 +403,8 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
     const uint8_t map[7425] = { 0 };
     size_t num_syms = 3 * encoder->varblock_width * encoder->varblock_height + num_non_zeroes;
     hyd_ans_init_stream(&stream, &encoder->allocator, &encoder->working_writer,
-                        num_syms, map, 7425);
+                        num_syms, map, 7425, 1);
+    hyd_set_hybrid_uint_config(&stream, 0, 1, 4, 2, 0);
     for (size_t by = 0; by < encoder->varblock_height; by++) {
         size_t vy = by << 3;
         for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
@@ -425,10 +426,11 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
                         : non_zeroes[c][by][bx] <= 4;
                     size_t coeff_context = hist_context + prev +
                         ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k]) << 1);
-                    ret = hyd_ans_send_symbol(&stream, coeff_context, hyd_pack_signed(encoder->xyb[c][vy + pos.y][vx + pos.x]));
+                    int32_t value = hyd_pack_signed(encoder->xyb[c][vy + pos.y][vx + pos.x]);
+                    ret = hyd_ans_send_symbol(&stream, coeff_context, value);
                     if (ret < HYD_ERROR_START)
                         return ret;
-                    if (encoder->xyb[c][vy + pos.y][vx + pos.x] && !--non_zero_count)
+                    if (value && !--non_zero_count)
                         break;
                 }
             }

@@ -23,6 +23,12 @@ typedef struct HYDAliasEntry {
     int16_t *original;
 } HYDAliasEntry;
 
+typedef struct HYDHybridUintConfig {
+    uint8_t split_exponent;
+    uint8_t msb_in_token;
+    uint8_t lsb_in_token;
+} HYDHybridUintConfig;
+
 typedef struct HYDEntropyStream {
     HYDAllocator *allocator;
     HYDBitWriter *bw;
@@ -36,11 +42,15 @@ typedef struct HYDEntropyStream {
     int alphabet_size;
     size_t *frequencies;
     HYDAliasEntry *alias_table;
+    HYDHybridUintConfig *configs;
 } HYDEntropyStream;
 
 HYDStatusCode hyd_ans_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
-                                      size_t symbol_count, const uint8_t *cluster_map, size_t num_dists);
-HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint16_t symbol);
+                                  size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
+                                  int custom_configs);
+HYDStatusCode hyd_set_hybrid_uint_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
+                                         int split_exponent, int msb_in_token, int lsb_in_token);
+HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint32_t symbol);
 HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream);
 HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream);
 
