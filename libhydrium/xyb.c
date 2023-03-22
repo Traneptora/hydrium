@@ -5,8 +5,6 @@
 #include "math-functions.h"
 #include "xyb.h"
 
-#include <stdio.h>
-
 static int64_t linearize(const int64_t srgb) {
     if (srgb <= 2650)
         return (srgb * UINT64_C(332427809)) >> 32;

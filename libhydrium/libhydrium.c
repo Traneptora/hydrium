@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <stdio.h>
-
 #include "internal.h"
 
 static void *hyd_alloc(size_t size, void *opaque) {

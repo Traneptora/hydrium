@@ -11,8 +11,6 @@
 #include "math-functions.h"
 #include "xyb.h"
 
-#include <stdio.h>
-
 typedef struct IntPos {
     uint8_t x, y;
 } IntPos;
