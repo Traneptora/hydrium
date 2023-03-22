@@ -16,6 +16,13 @@ typedef struct HYDAnsResidue {
     uint8_t bits;
 } HYDAnsResidue;
 
+typedef struct HYDAliasEntry {
+    size_t count;
+    int16_t *cutoffs;
+    int16_t *offsets;
+    int16_t *original;
+} HYDAliasEntry;
+
 typedef struct HYDEntropyStream {
     HYDAllocator *allocator;
     HYDBitWriter *bw;
@@ -28,9 +35,7 @@ typedef struct HYDEntropyStream {
     HYDAnsResidue *residues;
     int alphabet_size;
     size_t *frequencies;
-    uint16_t *cutoffs;
-    uint16_t *offsets;
-    uint16_t *symbols;
+    HYDAliasEntry *alias_table;
 } HYDEntropyStream;
 
 HYDStatusCode hyd_ans_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
