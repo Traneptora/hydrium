@@ -2,8 +2,10 @@
 #include <stdint.h>
 
 #include "internal.h"
-#include "osdep.h"
+#include "math-functions.h"
 #include "xyb.h"
+
+#include <stdio.h>
 
 static int64_t linearize(const int64_t srgb) {
     if (srgb <= 2650)
@@ -45,10 +47,10 @@ static void rgb_to_xyb(HYDEncoder *encoder, const size_t y, const size_t x, cons
     const int64_t lgamma = pow_one_third(((rp * 307) >> 10) + ((gp * 637) >> 10) + ((bp * 319) >> 12) + 249) - 10220;
     const int64_t mgamma = pow_one_third(((rp * 471) >> 11) + ((gp * 45351) >> 16) + ((bp * 319) >> 12) + 249) - 10220;
     const int64_t sgamma = pow_one_third(((rp * 997) >> 12) + ((gp * 3355) >> 14) + ((bp * 565) >> 10) + 249) - 10220;
-    encoder->xyb[0][y][x] = (lgamma - mgamma) >> 3;
-    encoder->xyb[1][y][x] = (lgamma + mgamma) >> 3;
+    encoder->xyb[0][y][x] = hyd_signed_rshift(lgamma - mgamma, 3);
+    encoder->xyb[1][y][x] = hyd_signed_rshift(lgamma + mgamma, 3);
     /* chroma-from-luma adds B to Y */
-    encoder->xyb[2][y][x] = (sgamma >> 2) - encoder->xyb[1][y][x];
+    encoder->xyb[2][y][x] = hyd_signed_rshift(sgamma, 2) - encoder->xyb[1][y][x];
 }
 
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *const buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride) {

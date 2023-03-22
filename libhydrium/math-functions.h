@@ -1,5 +1,5 @@
-#ifndef HYDRIUM_OSDEP_H_
-#define HYDRIUM_OSDEP_H_
+#ifndef HYDRIUM_MATH_FUNCTIONS_H_
+#define HYDRIUM_MATH_FUNCTIONS_H_
 
 #define hyd_fllog2__(n) (__builtin_clzll(1) - __builtin_clzll((n)|1))
 
@@ -27,4 +27,7 @@ static inline int hyd_fllog2(unsigned long long n) {
 
 #define hyd_cllog2(n) (hyd_fllog2(n) + !!((n) & ((n) - 1)))
 
-#endif /* HYDRIUM_OSDEP_H_ */
+#define hyd_signed_rshift(v, n) (((v) >> (n)) + ((v) < 0))
+#define hyd_pack_signed(v) ((v) >= 0 ? (v) << 1 : (-(v) << 1) - 1)
+
+#endif /* HYDRIUM_MATH_FUNCTIONS_H_ */

@@ -5,7 +5,7 @@
 #include "bitwriter.h"
 #include "entropy.h"
 #include "internal.h"
-#include "osdep.h"
+#include "math-functions.h"
 
 typedef struct VLCElement {
     uint32_t symbol;

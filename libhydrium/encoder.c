@@ -8,8 +8,10 @@
 #include "bitwriter.h"
 #include "entropy.h"
 #include "internal.h"
-#include "osdep.h"
+#include "math-functions.h"
 #include "xyb.h"
+
+#include <stdio.h>
 
 typedef struct IntPos {
     uint8_t x, y;
@@ -68,22 +70,22 @@ static const size_t hf_block_cluster_map[39] = {
 
 static const int32_t hf_quant_weights[3][64] = {
     {
-        4165, 4165, 4165, 4151, 4165, 4151, 3502, 3988, 3988, 3502, 2955, 3407, 3606, 3407, 2955, 2493,
-        2894, 3160, 3160, 2894, 2493, 2103, 2451, 2727, 2835, 2727, 2451, 2103, 1775, 2074, 2335, 2493,
-        2493, 2335, 2074, 1775, 1753, 1991, 2165, 2230, 2165, 1991, 1753, 1692, 1865, 1964, 1964, 1865,
-        1692, 1598, 1712, 1753, 1712, 1598, 1402, 1546, 1546, 1402, 1039, 1109, 1039,  738,  738,  506,
+        1969, 1969, 1969, 1962, 1969, 1962, 1655, 1885, 1885, 1655, 1397, 1610, 1704, 1610, 1397, 1178,
+        1368, 1494, 1494, 1368, 1178,  994, 1159, 1289, 1340, 1289, 1159,  994,  839,  980, 1104, 1178,
+        1178, 1104,  980,  839,  829,  941, 1023, 1054, 1023,  941,  829,  800,  881,  928,  928,  881,
+         800,  755,  809,  829,  809,  755,  663,  731,  731,  663,  491,  524,  491,  349,  349,  239,
     },
     {
-        602,  602,  602,  601,  602,  601,  526,  582,  582,  526,  461,  515,  538,  515,  461,  404,
-        453,  485,  485,  453,  404,  353,  398,  433,  446,  433,  398,  353,  310,  350,  383,  404,
-        404,  383,  350,  310,  307,  339,  361,  370,  361,  339,  307,  298,  322,  335,  335,  322,
-        298,  285,  301,  307,  301,  285,  269,  278,  278,  269,  250,  254,  250,  231,  231,  211,
+        280,  280,  280,  279,  280,  279,  245,  271,  271,  245,  214,  239,  250,  239,  214,  188,
+        211,  226,  226,  211,  188,  164,  185,  201,  207,  201,  185,  164,  144,  163,  178,  188,
+        188,  178,  163,  144,  143,  157,  168,  172,  168,  157,  143,  139,  150,  156,  156,  150,
+        139,  133,  140,  143,  140,  133,  125,  129,  129,  125,  116,  118,  116,  107,  107,   98,
     },
     {
-        539,  309,  309,  178,  246,  178,  126,  164,  164,  126,   90,  119,  133,  119,   90,   90,
-         90,  102,  102,   90,   90,   88,   90,   90,   90,   90,   90,   88,   62,   85,   90,   90,
-         90,   90,   85,   62,   60,   78,   90,   90,   90,   78,   60,   56,   69,   76,   76,   69,
-         56,   50,   58,   60,   58,   50,   41,   47,   47,   41,   31,   33,   31,   22,   22,   15,
+        256,  147,  147,   85,  117,   85,   60,   78,   78,   60,   43,   56,   63,   56,   43,   43,
+         43,   48,   48,   43,   43,   42,   43,   43,   43,   43,   43,   42,   29,   41,   43,   43,
+         43,   43,   41,   29,   29,   37,   43,   43,   43,   37,   29,   27,   33,   36,   36,   33,
+         27,   24,   27,   29,   27,   24,   20,   22,   22,   20,   15,   16,   15,   10,   10,    7,
     },
 };
 
@@ -349,7 +351,7 @@ static void forward_dct(HYDEncoder *encoder) {
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
                             scratchblock[0][y][k] += encoder->xyb[c][posy][vx + n] * cosine_lut[k - 1][n];
-                        scratchblock[0][y][k] >>= 18;
+                        scratchblock[0][y][k] = hyd_signed_rshift(scratchblock[0][y][k], 18);
                     }
                 }
                 for (size_t x = 0; x < 8; x++) {
@@ -360,7 +362,7 @@ static void forward_dct(HYDEncoder *encoder) {
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
                             scratchblock[1][k][x] += scratchblock[0][n][x] * cosine_lut[k - 1][n];
-                        scratchblock[1][k][x] >>= 18;
+                        scratchblock[1][k][x] = hyd_signed_rshift(scratchblock[1][k][x], 18);
                     }
                 }
                 for (size_t y = 0; y < 8; y++) {
@@ -392,11 +394,9 @@ static size_t get_non_zero_context(size_t predicted, size_t block_context) {
     return block_context + 15 * (4 + (predicted >> 1));
 }
 
-static int16_t hf_quant(int32_t value, int32_t weight, uint16_t hf_mult) {
-    if (value < 0)
-        return -hf_quant(-value, weight, hf_mult);
-
-    return (value * weight * hf_mult) >> 15;
+static int16_t hf_quant(int64_t value, int32_t weight, uint16_t hf_mult) {
+    int64_t v = value * weight * hf_mult;
+    return hyd_signed_rshift(v, 14);
 }
 
 static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes, uint8_t non_zeroes[3][32][32]) {
@@ -427,11 +427,10 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
                         : non_zeroes[c][by][bx] <= 4;
                     size_t coeff_context = hist_context + prev +
                         ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k]) << 1);
-                    int32_t value = encoder->xyb[c][vy + pos.y][vx + pos.x];
-                    ret = hyd_ans_send_symbol(&stream, coeff_context, value >= 0 ? value << 1 : (-value << 1) - 1);
+                    ret = hyd_ans_send_symbol(&stream, coeff_context, hyd_pack_signed(encoder->xyb[c][vy + pos.y][vx + pos.x]));
                     if (ret < HYD_ERROR_START)
                         return ret;
-                    if (value && !--non_zero_count)
+                    if (encoder->xyb[c][vy + pos.y][vx + pos.x] && !--non_zero_count)
                         break;
                 }
             }
@@ -462,10 +461,10 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
         size_t vy = by << 3;
         for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
             size_t vx = bx << 3;
-            uint32_t hf = (((encoder->xyb[1][vy + 7][vx + 7] & INT32_C(0x7FFF)) + (encoder->xyb[2][vy + 7][vx + 7] & INT32_C(0x7FFF))) << 1)
+            uint32_t hf = (((((encoder->xyb[1][vy + 7][vx + 7] & INT32_C(0x7FFF)) + (encoder->xyb[2][vy + 7][vx + 7] & INT32_C(0x7FFF))) << 1)
                 + (encoder->xyb[1][vy + 7][vx + 6] & INT32_C(0x7FFF)) + (encoder->xyb[1][vy + 6][vx + 7] & INT32_C(0x7FFF))
-                + (encoder->xyb[2][vy + 7][vx + 6] & INT32_C(0x7FFF)) + (encoder->xyb[2][vy + 6][vx + 7] & INT32_C(0x7FFF));
-            hf_mult[by * encoder->varblock_width + bx] = 8 + ((hf >> 14) & 0xF);
+                + (encoder->xyb[2][vy + 7][vx + 6] & INT32_C(0x7FFF)) + (encoder->xyb[2][vy + 6][vx + 7] & INT32_C(0x7FFF))) >> 14) & 0xF;
+            hf_mult[by * encoder->varblock_width + bx] = hf > 5 ? hf : 5;
             for (int i = 0; i < 3; i++) {
                 size_t nzc = 0;
                 for (int j = 1; j < 64; j++) {
