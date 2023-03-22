@@ -129,8 +129,8 @@ done:
     if (output_buffer)
         free(output_buffer);
 
-    fprintf(stderr, "Total libhydrium heap memory: %lu bytes\nMax libhydrium heap memory: %lu bytes\n",
-        holder.total_alloced, holder.max_alloced);
+    fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
+        (long long unsigned)holder.total_alloced, (long long unsigned)holder.max_alloced);
 
     return status;
 }
