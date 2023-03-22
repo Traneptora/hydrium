@@ -11,13 +11,43 @@
 #include "libhydrium/libhydrium.h"
 #include "lodepng.h"
 
+struct memory_holder {
+    size_t total_alloced;
+    size_t current_alloced;
+    size_t max_alloced;
+};
+
+static void *mem_alloc(size_t size, void *opaque) {
+    struct memory_holder *holder = opaque;
+    size += sizeof(size_t);
+    void *ptr = malloc(size);
+    if (!ptr)
+        return NULL;
+    holder->total_alloced += size;
+    holder->current_alloced += size;
+    if (holder->current_alloced > holder->max_alloced)
+        holder->max_alloced = holder->current_alloced;
+    *(size_t *)ptr = size;
+    return ptr + sizeof(size_t);
+}
+
+static void mem_free(void *ptr, void *opaque) {
+    if (!ptr)
+        return;
+    struct memory_holder *holder = opaque;
+    void *og_ptr = ptr - sizeof(size_t);
+    holder->current_alloced -= *(size_t *)og_ptr;
+    free(og_ptr);
+}
+
 int main(int argc, const char *argv[]) {
     uint64_t width, height;
     uint8_t *buffer, *output_buffer = NULL;
     HYDEncoder *encoder = NULL;
     HYDStatusCode status = 1;
     FILE *fp = stdout;
-    
+    struct memory_holder holder = { 0 };
+
     if (argc < 2 || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "Usage: %s <input.png> [output.jxl]\n", argv[0]);
         return argc >= 2;
@@ -43,7 +73,13 @@ int main(int argc, const char *argv[]) {
     if (!output_buffer)
         goto done;
 
-    encoder = hyd_encoder_new(NULL);
+    HYDAllocator allocator;
+
+    allocator.alloc_func = &mem_alloc;
+    allocator.free_func = &mem_free;
+    allocator.opaque = &holder;
+
+    encoder = hyd_encoder_new(&allocator);
 
     HYDImageMetadata metadata;
     metadata.width = width;
@@ -92,6 +128,9 @@ done:
         free(buffer);
     if (output_buffer)
         free(output_buffer);
+
+    fprintf(stderr, "Total libhydrium heap memory: %lu bytes\nMax libhydrium heap memory: %lu bytes\n",
+        holder.total_alloced, holder.max_alloced);
 
     return status;
 }
