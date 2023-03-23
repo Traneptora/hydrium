@@ -39,18 +39,26 @@ typedef struct HYDEntropyStream {
     size_t symbol_pos;
     HYDAnsToken *tokens;
     HYDAnsResidue *residues;
-    int alphabet_size;
+    int max_alphabet_size;
     size_t *frequencies;
-    HYDAliasEntry *alias_table;
     HYDHybridUintConfig *configs;
+
+    uint32_t lz77_min_length;
+    uint32_t lz77_min_symbol;
+    uint32_t last_symbol;
+    uint32_t lz77_rle_count;
+
+    // ans only
+    HYDAliasEntry *alias_table;
 } HYDEntropyStream;
 
-HYDStatusCode hyd_ans_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
-                                  size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
-                                  int custom_configs);
-HYDStatusCode hyd_set_hybrid_uint_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
-                                         int split_exponent, int msb_in_token, int lsb_in_token);
-HYDStatusCode hyd_ans_send_symbol(HYDEntropyStream *stream, size_t dist, uint32_t symbol);
+HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
+                                      size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
+                                      int custom_configs, uint32_t lz77_min_symbol);
+HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
+                                            int split_exponent, int msb_in_token, int lsb_in_token);
+HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uint32_t symbol);
+
 HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream);
 HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream);
 
