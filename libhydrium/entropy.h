@@ -29,6 +29,11 @@ typedef struct HYDHybridUintConfig {
     uint8_t lsb_in_token;
 } HYDHybridUintConfig;
 
+typedef struct HYDVLCElement {
+    int32_t symbol;
+    int length;
+} HYDVLCElement;
+
 typedef struct HYDEntropyStream {
     HYDAllocator *allocator;
     HYDBitWriter *bw;
@@ -39,7 +44,8 @@ typedef struct HYDEntropyStream {
     size_t symbol_pos;
     HYDAnsToken *tokens;
     HYDAnsResidue *residues;
-    int max_alphabet_size;
+    uint32_t max_alphabet_size;
+    uint32_t *alphabet_sizes;
     size_t *frequencies;
     HYDHybridUintConfig *configs;
 
@@ -47,6 +53,9 @@ typedef struct HYDEntropyStream {
     uint32_t lz77_min_symbol;
     uint32_t last_symbol;
     uint32_t lz77_rle_count;
+
+    // prefix only
+    HYDVLCElement *vlc_table;
 
     // ans only
     HYDAliasEntry *alias_table;
@@ -58,6 +67,9 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
                                             int split_exponent, int msb_in_token, int lsb_in_token);
 HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uint32_t symbol);
+
+HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream);
+HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream);
 
 HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream);
 HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream);
