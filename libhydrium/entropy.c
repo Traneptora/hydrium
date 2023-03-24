@@ -28,7 +28,6 @@ static const HYDVLCElement ans_dist_prefix_lengths[14] = {
 static const HYDHybridUintConfig lz77_len_conf = {7, 0, 0};
 
 static const uint32_t prefix_zig_zag[18] = {1, 2, 3, 4, 0, 5, 17, 6, 16, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-//static const uint32_t prefix_zig_zag_inverse[18] = {5, 0, 1, 2, 4, 5, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 8, 6};
 
 static const HYDVLCElement prefix_level0_table[6] = {
     {0, 2}, {7, 4}, {3, 3}, {2, 2}, {1, 2}, {15, 4},
@@ -108,7 +107,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
     hyd_write_bool(bw, 0);
     // use mtf = true
     hyd_write_bool(bw, 1);
-    ret = hyd_entropy_init_stream(&nested, stream->allocator, stream->bw, stream->num_dists, (const uint8_t[]){0},
+    ret = hyd_entropy_init_stream(&nested, stream->allocator, bw, stream->num_dists, (const uint8_t[]){0},
         1, 0, 32);
     if (ret < HYD_ERROR_START)
         goto fail;
@@ -482,7 +481,8 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
         hyd_write(bw, log_alphabet_size - 5, 2);
 
     for (size_t i = 0; i < stream->num_clusters; i++) {
-        if ((ret = write_hybrid_uint_config(stream, &stream->configs[i], prefix_codes ? 15 : log_alphabet_size)) < HYD_ERROR_START)
+        ret = write_hybrid_uint_config(stream, &stream->configs[i], prefix_codes ? 15 : log_alphabet_size);
+        if (ret < HYD_ERROR_START)
             return ret;
     }
 
@@ -602,6 +602,27 @@ static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *
     return ret;
 }
 
+static void flush_zeroes(HYDBitWriter *bw, const HYDVLCElement *level1_table, uint32_t num_zeroes) {
+    if (num_zeroes >= 3) {
+        int32_t k = 0;
+        uint32_t nz_residues[8];
+        while (num_zeroes > 10) {
+            uint32_t new_num_zeroes = (num_zeroes + 13) / 8;
+            nz_residues[k++] = num_zeroes - 8 * new_num_zeroes + 16;
+            num_zeroes = new_num_zeroes;
+        }
+        nz_residues[k++] = num_zeroes;
+        for (int32_t l = k - 1; l >= 0; l--) {
+            hyd_write(bw, level1_table[17].symbol, level1_table[17].length);
+            uint32_t res = nz_residues[l];
+            hyd_write(bw, res - 3, 3);
+        }
+    } else if (num_zeroes) {
+        for (uint32_t k = 0; k < num_zeroes; k++)
+            hyd_write(bw, level1_table[0].symbol, level1_table[0].length);
+    }
+}
+
 static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint32_t cluster, const uint32_t *lengths) {
     HYDBitWriter *bw = stream->bw;
     HYDStatusCode ret = HYD_OK;
@@ -612,8 +633,25 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
 
     size_t level1_freqs[18] = { 0 };
 
-    for (uint32_t j = 0; j < stream->alphabet_sizes[cluster]; j++)
-        level1_freqs[lengths[j]]++;
+    uint32_t num_zeroes = 0;
+    for (uint32_t j = 0; j < stream->alphabet_sizes[cluster]; j++) {
+        uint32_t code = lengths[j];
+        if (!code) {
+            num_zeroes++;
+            continue;
+        }
+        if (num_zeroes >= 3) {
+            while (num_zeroes > 10) {
+                level1_freqs[17]++;
+                num_zeroes = (num_zeroes + 13) / 8;
+            }
+            level1_freqs[17]++;
+        } else {
+            level1_freqs[0] += num_zeroes;
+        }
+        num_zeroes = 0;
+        level1_freqs[code]++;
+    }
 
     uint32_t level1_lengths[18] = { 0 };
     ret = build_huffman_tree(stream->allocator, level1_freqs, level1_lengths, 18);
@@ -643,14 +681,21 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
         goto end;
 
     total_code = 0;
+    num_zeroes = 0;
     for (uint32_t j = 0; j < stream->alphabet_sizes[cluster]; j++) {
         uint32_t code = lengths[j];
+        if (!code) {
+            num_zeroes++;
+            continue;
+        }
+        flush_zeroes(bw, level1_table, num_zeroes);
+        num_zeroes = 0;
         hyd_write(bw, level1_table[code].symbol, level1_table[code].length);
-        if (code)
-            total_code += 32768 >> code;
+        total_code += 32768 >> code;
         if (total_code == 32768)
             break;
     }
+    flush_zeroes(bw, level1_table, num_zeroes);
 
 end:
     HYD_FREEA(stream->allocator, level1_table);
