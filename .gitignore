@@ -54,3 +54,7 @@ dkms.conf
 # Test Files
 *.png
 *.raw
+*.jxl
+
+# Valgrind dumps
+vgcore.*
