@@ -31,5 +31,8 @@ static inline int hyd_fllog2(unsigned long long n) {
 #define hyd_pack_signed(v) ((v) >= 0 ? (v) << 1 : (-(v) << 1) - 1)
 #define hyd_max(a, b) ((a) > (b) ? (a) : (b))
 #define hyd_max3(a, b, c) hyd_max((a), hyd_max((b), (c)))
+#define hyd_swap(type, a, b) do {\
+    type __hyd_swap_temp; __hyd_swap_temp = (b), (b) = (a), (a) = __hyd_swap_temp;\
+} while (0)
 
 #endif /* HYDRIUM_MATH_FUNCTIONS_H_ */

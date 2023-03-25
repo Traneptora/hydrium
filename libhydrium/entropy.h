@@ -45,8 +45,8 @@ typedef struct HYDEntropyStream {
     HYDAnsToken *tokens;
     HYDAnsResidue *residues;
     uint32_t max_alphabet_size;
-    uint32_t *alphabet_sizes;
-    size_t *frequencies;
+    uint16_t *alphabet_sizes;
+    uint16_t *frequencies;
     HYDHybridUintConfig *configs;
 
     uint32_t lz77_min_length;
