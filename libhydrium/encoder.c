@@ -440,9 +440,9 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
             }
         }
     }
-    if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
         return ret;
-    if ((ret = hyd_ans_finalize_stream(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
 
     return encoder->working_writer.overflow_state;

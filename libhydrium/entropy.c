@@ -16,6 +16,8 @@ typedef struct StateFlush {
 typedef struct FrequencyEntry {
     int32_t token;
     size_t frequency;
+    int32_t depth;
+    int32_t max_depth;
     struct FrequencyEntry *left_child;
     struct FrequencyEntry *right_child;
 } FrequencyEntry;
@@ -510,24 +512,26 @@ static int symbol_compare(const void *a, const void *b) {
 }
 
 static int huffman_compare(const void *a, const void *b) {
-    const ptrdiff_t fb = ((const FrequencyEntry *)b)->frequency;
-    const ptrdiff_t fa = ((const FrequencyEntry *)a)->frequency;
-    return !fb ? -1 : !fa ? 1 : fa - fb;
+    const FrequencyEntry *fa = a;
+    const FrequencyEntry *fb = b;
+    const ptrdiff_t pb = fb->frequency;
+    const ptrdiff_t pa = fa->frequency;
+    const int32_t ta = fa->token;
+    const int32_t tb = fb->token;
+    return pa != pb ? (!pb ? -1 : !pa ? 1 : pa - pb) : (!tb ? -1 : !ta ? 1 : ta - tb);
 }
 
-static void collect(const FrequencyEntry *entry, uint32_t *lengths, uint32_t count) {
+static int32_t collect(FrequencyEntry *entry) {
     if (!entry)
-        return;
-    if (entry->token > 0) {
-        lengths[entry->token - 1] = count;
-    } else {
-        collect(entry->left_child, lengths, count + 1);
-        collect(entry->right_child, lengths, count + 1);
-    }
+        return 0;
+    int32_t self = ++entry->depth;
+    int32_t left = collect(entry->left_child);
+    int32_t right = collect(entry->right_child);
+    return entry->max_depth = hyd_max3(self, left, right);
 }
 
 static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const size_t *frequencies,
-                                        uint32_t *lengths, uint32_t alphabet_size) {
+                                        uint32_t *lengths, uint32_t alphabet_size, int32_t max_depth) {
     HYDStatusCode ret = HYD_OK;
     FrequencyEntry *tree = HYD_ALLOCA(allocator, (2 * alphabet_size - 1) * sizeof(FrequencyEntry));
     if (!tree) {
@@ -535,31 +539,50 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const size_t *f
         goto fail;
     }
 
+    uint32_t count = 0;
     for (uint32_t token = 0; token < alphabet_size; token++) {
         tree[token].frequency = frequencies[token];
         tree[token].token = 1 + token;
         tree[token].left_child = tree[token].right_child = NULL;
+        tree[token].depth = 0;
+        tree[token].max_depth = 0;
+        if (tree[token].frequency)
+            count++;
     }
     memset(tree + alphabet_size, 0, (alphabet_size - 1) * sizeof(FrequencyEntry));
-    FrequencyEntry *root = NULL;
     for (uint32_t k = 0; k < alphabet_size - 1; k++) {
         qsort(tree + 2 * k, alphabet_size - k, sizeof(FrequencyEntry), &huffman_compare);
         FrequencyEntry *smallest = &tree[2 * k];
         FrequencyEntry *second = &tree[2 * k + 1];
-        if (!second->frequency) {
-            root = smallest;
+        if (!second->frequency)
             break;
+        if (max_depth > 0) {
+            int32_t target = max_depth - hyd_cllog2(count);
+            while (smallest->max_depth >= target || !smallest->frequency)
+                smallest = second++;
+            while (second->max_depth >= target || !second->frequency)
+                second++;
+            FrequencyEntry temp = *smallest;
+            *smallest = tree[2 * k];
+            tree[2 * k] = temp;
+            temp = *second;
+            *second = tree[2 * k + 1];
+            tree[2 * k + 1] = temp;
+            smallest = tree + 2 * k;
+            second = smallest + 1;
         }
         FrequencyEntry *entry = &tree[alphabet_size + k];
         entry->frequency = smallest->frequency + second->frequency;
         entry->left_child = smallest;
         entry->right_child = second;
+        collect(entry);
+        count--;
     }
 
-    if (!root)
-        root = tree + (2 * alphabet_size - 2);
-
-    collect(root, lengths, 0);
+    for (uint32_t j = 0; j < 2 * alphabet_size - 1; j++) {
+        if (tree[j].token > 0)
+            lengths[tree[j].token - 1] = tree[j].depth;
+    }
 
     HYD_FREEA(allocator, tree);
     return HYD_OK;
@@ -653,7 +676,7 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
     }
 
     uint32_t level1_lengths[18] = { 0 };
-    ret = build_huffman_tree(stream->allocator, level1_freqs, level1_lengths, 18);
+    ret = build_huffman_tree(stream->allocator, level1_freqs, level1_lengths, 18, 5);
     if (ret < HYD_ERROR_START)
         goto end;
 
@@ -664,8 +687,12 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
                       prefix_level0_table[code].length);
         if (code)
             total_code += 32 >> code;
-        if (total_code == 32)
+        if (total_code >= 32)
             break;
+    }
+    if (total_code && total_code != 32) {
+        ret = HYD_INTERNAL_ERROR;
+        goto end;
     }
 
     level1_table = HYD_ALLOCA(stream->allocator, 18 * sizeof(HYDVLCElement));
@@ -737,7 +764,7 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
             continue;
         uint32_t *lengths = global_lengths + i * stream->max_alphabet_size;
         const size_t *freqs = stream->frequencies + i * stream->max_alphabet_size;
-        if ((ret = build_huffman_tree(stream->allocator, freqs, lengths, stream->alphabet_sizes[i])) < HYD_ERROR_START)
+        if ((ret = build_huffman_tree(stream->allocator, freqs, lengths, stream->alphabet_sizes[i], 15)) < HYD_ERROR_START)
             return ret;
         uint32_t nsym = 0;
         HYDVLCElement tokens[4] = { 0 };

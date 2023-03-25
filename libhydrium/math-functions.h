@@ -29,5 +29,7 @@ static inline int hyd_fllog2(unsigned long long n) {
 
 #define hyd_signed_rshift(v, n) (((v) >> (n)) + ((v) < 0))
 #define hyd_pack_signed(v) ((v) >= 0 ? (v) << 1 : (-(v) << 1) - 1)
+#define hyd_max(a, b) ((a) > (b) ? (a) : (b))
+#define hyd_max3(a, b, c) hyd_max((a), hyd_max((b), (c)))
 
 #endif /* HYDRIUM_MATH_FUNCTIONS_H_ */
