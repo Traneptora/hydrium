@@ -295,9 +295,9 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
             }
         }
     }
-    if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
         return ret;
-    if ((ret = hyd_ans_finalize_stream(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
     hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
     hyd_write(bw, 0x2, 4);
@@ -321,12 +321,12 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
     for (size_t i = 0; i < num_z_pre; i++)
         hyd_entropy_send_symbol(&stream, 0, 0);
     for (size_t i = 0; i < nb_blocks; i++)
-        hyd_entropy_send_symbol(&stream, 0, (hf_mult[i] - 1) << 1);
+        hyd_entropy_send_symbol(&stream, 0, (hf_mult[i] - 1) * 2);
     for (size_t i = 0; i < nb_blocks; i++)
         hyd_entropy_send_symbol(&stream, 0, 0);
-    if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
         return ret;
-    if ((ret = hyd_ans_finalize_stream(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
 
     return bw->overflow_state;
@@ -459,7 +459,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     forward_dct(encoder);
 
     uint8_t non_zeroes[3][32][32] = { 0 };
-    uint16_t hf_mult[1024];
+    uint16_t hf_mult[1024] = { 0 };
     size_t num_non_zeroes = 0;
     for (size_t by = 0; by < encoder->varblock_height; by++) {
         size_t vy = by << 3;
