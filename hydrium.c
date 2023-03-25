@@ -50,7 +50,7 @@ int main(int argc, const char *argv[]) {
 
     if (argc < 2 || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "Usage: %s <input.png> [output.jxl]\n", argv[0]);
-        return argc >= 2;
+        return argc < 2;
     }
     unsigned w, h;
     unsigned ret = lodepng_decode24_file(&buffer, &w, &h, argv[1]);
