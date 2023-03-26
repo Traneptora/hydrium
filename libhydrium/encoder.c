@@ -403,12 +403,15 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
     uint8_t map[7425];
     for (int k = 0; k < 15; k++) {
         memset(map + 37 * k, k, 37);
-        memset(map + 555 + 458 * k, k + 15, 458);
+        for (int j = 0; j < 229; j++) {
+            map[555 + 458 * k + 2 * j] = k + 15;
+            map[555 + 458 * k + 2 * j + 1] = k + 30;
+        }
     }
     size_t num_syms = 3 * encoder->varblock_width * encoder->varblock_height + num_non_zeroes;
     hyd_entropy_init_stream(&stream, &encoder->allocator, &encoder->working_writer,
                         num_syms, map, 7425, 1, 0);
-    hyd_entropy_set_hybrid_config(&stream, 0, 32, 4, 2, 0);
+    hyd_entropy_set_hybrid_config(&stream, 0, 45, 4, 1, 0);
     for (size_t by = 0; by < encoder->varblock_height; by++) {
         size_t vy = by << 3;
         for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
@@ -418,18 +421,17 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
                 uint8_t predicted = get_predicted_non_zeroes(non_zeroes[c], by, bx);
                 size_t block_context = hf_block_cluster_map[13 * i];
                 size_t non_zero_context = get_non_zero_context(predicted, block_context);
-                int16_t non_zero_count = non_zeroes[c][by][bx];
+                uint16_t non_zero_count = non_zeroes[c][by][bx];
                 hyd_entropy_send_symbol(&stream, non_zero_context, non_zero_count);
                 if (!non_zero_count)
                     continue;
-                size_t hist_context = 458 * block_context + 37 * 15;
+                size_t hist_context = 458 * block_context + 555;
                 for (int k = 0; k < 63; k++) {
                     IntPos pos = natural_order[k + 1];
                     IntPos prev_pos = natural_order[k];
-                    int prev = k ? !!encoder->xyb[c][vy + prev_pos.y][vx + prev_pos.x]
-                        : non_zeroes[c][by][bx] <= 4;
+                    int prev = k ? !!encoder->xyb[c][vy + prev_pos.y][vx + prev_pos.x] : non_zero_count <= 4;
                     size_t coeff_context = hist_context + prev +
-                        ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k]) << 1);
+                        ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k + 1]) << 1);
                     int32_t value = hyd_pack_signed(encoder->xyb[c][vy + pos.y][vx + pos.x]);
                     ret = hyd_entropy_send_symbol(&stream, coeff_context, value);
                     if (ret < HYD_ERROR_START)

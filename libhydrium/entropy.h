@@ -6,15 +6,12 @@
 
 #include "bitwriter.h"
 
-typedef struct HYDAnsToken {
-    uint8_t token;
+typedef struct HYDHybridSymbol {
+    uint16_t token;
     uint8_t cluster;
-} HYDAnsToken;
-
-typedef struct HYDAnsResidue {
-    uint16_t residue;
-    uint8_t bits;
-} HYDAnsResidue;
+    uint8_t residue_bits;
+    uint32_t residue;
+} HYDHybridSymbol;
 
 typedef struct HYDAliasEntry {
     size_t count;
@@ -42,13 +39,13 @@ typedef struct HYDEntropyStream {
     size_t num_clusters;
     size_t init_symbol_count;
     size_t symbol_pos;
-    HYDAnsToken *tokens;
-    HYDAnsResidue *residues;
-    uint32_t max_alphabet_size;
+    HYDHybridSymbol *symbols;
+    uint16_t max_alphabet_size;
     uint16_t *alphabet_sizes;
     uint16_t *frequencies;
     HYDHybridUintConfig *configs;
 
+    // lz77 only
     uint32_t lz77_min_length;
     uint32_t lz77_min_symbol;
     uint32_t last_symbol;
