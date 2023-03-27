@@ -15,9 +15,9 @@
 
 #ifdef _WIN32
     #ifdef HYDRIUM_INTERNAL_BUILD
-        #define HYDRIUM_EXPORT __declspec(__dllexport)
+        #define HYDRIUM_EXPORT __declspec(dllexport)
     #else
-        #define HYDRIUM_EXPORT __declspec(__dllimport)
+        #define HYDRIUM_EXPORT __declspec(dllimport)
     #endif
 #else
     #if defined(__GNUC__) || defined(__CLANG__)
