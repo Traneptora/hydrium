@@ -507,9 +507,11 @@ static int symbol_compare(const void *a, const void *b) {
     return !vlc_b->length ? -1 : !vlc_a->length ? 1 : vlc_a->length - vlc_b->length;
 }
 
-static int huffman_compare(const void *a, const void *b) {
-    const FrequencyEntry *fa = a;
-    const FrequencyEntry *fb = b;
+static int huffman_compare(const FrequencyEntry *fa, const FrequencyEntry *fb) {
+    if (!fa)
+        return 1;
+    if (!fb)
+        return -1;
     const ptrdiff_t pb = fb->frequency;
     const ptrdiff_t pa = fa->frequency;
     const int32_t ta = fa->token;
@@ -547,22 +549,23 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t 
     }
     memset(tree + alphabet_size, 0, (alphabet_size - 1) * sizeof(FrequencyEntry));
     for (uint32_t k = 0; k < alphabet_size - 1; k++) {
-        qsort(tree + 2 * k, alphabet_size - k, sizeof(FrequencyEntry), &huffman_compare);
-        FrequencyEntry *smallest = &tree[2 * k];
-        FrequencyEntry *second = &tree[2 * k + 1];
-        if (!second->frequency)
-            break;
-        if (max_depth > 0) {
-            int32_t target = max_depth - hyd_cllog2(count);
-            while (smallest->max_depth >= target || !smallest->frequency)
-                smallest = second++;
-            while (second->max_depth >= target || !second->frequency)
-                second++;
-            hyd_swap(FrequencyEntry, *smallest, tree[2 * k]);
-            hyd_swap(FrequencyEntry, *second, tree[2 * k + 1]);
-            smallest = tree + 2 * k;
-            second = smallest + 1;
+        FrequencyEntry *smallest = NULL;
+        FrequencyEntry *second = NULL;
+        for (uint32_t j = 2 * k; j < 2 * alphabet_size - 1; j++) {
+            int32_t target = max_depth > 0 ? max_depth - hyd_cllog2(count) : INT32_MAX;
+            if (huffman_compare(smallest, &tree[j]) > 0 && tree[j].max_depth < target) {
+                second = smallest;
+                smallest = &tree[j];
+            } else if (huffman_compare(second, &tree[j]) > 0 && tree[j].max_depth < target) {
+                second = &tree[j];
+            }
         }
+        if (smallest)
+            hyd_swap(FrequencyEntry, *smallest, tree[2 * k]);
+        if (second)
+            hyd_swap(FrequencyEntry, *second, tree[2 * k + 1]);
+        smallest = &tree[2 * k];
+        second = &tree[2 * k + 1];
         FrequencyEntry *entry = &tree[alphabet_size + k];
         entry->frequency = smallest->frequency + second->frequency;
         entry->left_child = smallest;
