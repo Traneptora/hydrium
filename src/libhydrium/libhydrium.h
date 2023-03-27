@@ -10,8 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define HYDRIUM_VERSION_INT 0x1000002001
-#define HYDRIUM_VERSION_STRING "0.2.1"
+#define HYDRIUM_VERSION_INT 0x1000002002
+#define HYDRIUM_VERSION_STRING "0.2.2"
 
 #ifdef _WIN32
     #ifdef HYDRIUM_INTERNAL_BUILD
