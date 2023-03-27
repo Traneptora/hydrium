@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "libhydrium/libhydrium.h"
-#include "lodepng.h"
+#include "lodepng/lodepng.h"
 
 struct memory_holder {
     size_t total_alloced;
