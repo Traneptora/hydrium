@@ -2,7 +2,7 @@ project('hydrium', 'c',
     license: ['BSD-2-Clause'],
     version : '0.2.1',
     default_options: [
-        'buildtype=debugoptimized',
+        'buildtype=minsize',
         'c_std=c99',
         'warning_level=1',
     ],
@@ -10,9 +10,10 @@ project('hydrium', 'c',
 
 cflags = [
     '-DLODEPNG_NO_COMPILE_ENCODER',
+    '-DHYDRIUM_INTERNAL_BUILD',
 ]
 
-wanted_flags = [
+wanted_cflags = [
     '-Werror=implicit-function-declaration',
     '-fPIC',
     '-fno-plt',
@@ -21,9 +22,16 @@ wanted_flags = [
     '-fvisibility=hidden',
 ]
 
+ldflags = []
+
+wanted_ldflags = [
+    '-Wl,-s',
+]
+
 cc = meson.get_compiler('c')
 
-cflags += cc.get_supported_arguments(wanted_flags)
+cflags += cc.get_supported_arguments(wanted_cflags)
+ldflags += cc.get_supported_link_arguments(wanted_ldflags)
 
 libhydrium_sources = files(
     'src/libhydrium/bitwriter.c',
@@ -41,6 +49,20 @@ hydrium_sources = files(
     'src/hydrium.c'
 )
 
-libhydrium = library('hydrium', sources: libhydrium_sources, version : '0.2.1', soversion : '0', c_args: cflags)
+libhydrium = library('hydrium',
+    sources: libhydrium_sources,
+    soversion : '0',
+    c_args: cflags,
+    link_args: ldflags,
+    install: true,
+)
 
-executable('hydrium', sources: [hydrium_sources, lodepng_sources], link_with: libhydrium, c_args: cflags)
+hydrium = executable('hydrium',
+    sources: [hydrium_sources, lodepng_sources],
+    link_with: libhydrium,
+    c_args: cflags,
+    link_args: ldflags,
+    install: true,
+)
+
+install_headers('src/libhydrium/libhydrium.h', subdir: 'libhydrium')
