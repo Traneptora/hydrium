@@ -399,8 +399,6 @@ static HYDStatusCode send_hybridized_symbol(HYDEntropyStream *stream, const HYDH
     return HYD_OK;
 }
 
-#include <stdio.h>
-
 static HYDStatusCode send_entropy_symbol0(HYDEntropyStream *stream, size_t dist, uint32_t symbol,
                                           const HYDHybridUintConfig *extra_config) {
     HYDHybridSymbol hybrid_symbol;
