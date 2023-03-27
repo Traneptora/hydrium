@@ -48,6 +48,8 @@ int main(int argc, const char *argv[]) {
     FILE *fp = stdout;
     struct memory_holder holder = { 0 };
 
+    fprintf(stderr, "libhydrium version %s\n", HYDRIUM_VERSION_STRING);
+
     if (argc < 2 || !strcmp(argv[1], "--help")) {
         fprintf(stderr, "Usage: %s <input.png> [output.jxl]\n", argv[0]);
         return argc < 2;
