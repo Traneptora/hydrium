@@ -18,6 +18,7 @@ wanted_flags = [
     '-fno-plt',
     '-Wformat',
     '-Werror=format-security',
+    '-fvisibility=hidden',
 ]
 
 cc = meson.get_compiler('c')
@@ -40,6 +41,6 @@ hydrium_sources = files(
     'src/hydrium.c'
 )
 
-libhydrium = library('hydrium', sources: libhydrium_sources, version : '0.2.1', soversion : '0')
+libhydrium = library('hydrium', sources: libhydrium_sources, version : '0.2.1', soversion : '0', c_args: cflags)
 
 executable('hydrium', sources: [hydrium_sources, lodepng_sources], link_with: libhydrium, c_args: cflags)

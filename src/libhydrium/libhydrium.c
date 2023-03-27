@@ -17,7 +17,7 @@ static void hyd_free(void *ptr, void *opaque) {
     free(ptr);
 }
 
-HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
+HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
     HYDEncoder *ret;
 
     if (allocator)
@@ -41,13 +41,13 @@ HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
     return ret;
 }
 
-HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
+HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     HYD_FREE(encoder, encoder);
 
     return HYD_OK;
 }
 
-HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *metadata) {
+HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *metadata) {
     if (!metadata->width || !metadata->height)
         return HYD_API_ERROR;
     const uint64_t width64 = metadata->width;
@@ -64,7 +64,7 @@ HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *meta
     return HYD_OK;
 }
 
-HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len) {
+HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len) {
     if (buffer_len < 64)
         return HYD_API_ERROR;
     encoder->out = buffer;
@@ -77,12 +77,12 @@ HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, si
     return hyd_init_bit_writer(&encoder->writer, buffer, buffer_len, encoder->writer.cache, encoder->writer.cache_bits);
 }
 
-HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written) {
+HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written) {
     *written = encoder->writer.buffer_pos;
     return encoder->writer.overflow_state;
 }
 
-HYDStatusCode hyd_flush(HYDEncoder *encoder) {
+HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
     hyd_bitwriter_flush(&encoder->writer);
     size_t tocopy = encoder->writer.buffer_len - encoder->writer.buffer_pos;
     if (tocopy > encoder->working_writer.buffer_pos - encoder->copy_pos)
