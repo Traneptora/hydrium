@@ -513,8 +513,9 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     return ret;
 }
 
-HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3], uint32_t tile_x, uint32_t tile_y,
-                            ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3],
+                                           uint32_t tile_x, uint32_t tile_y,
+                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     HYDStatusCode ret;
     if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < HYD_ERROR_START)
         return ret;
@@ -525,8 +526,9 @@ HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *
     return encode_xyb_buffer(encoder);
 }
 
-HYDRIUM_EXPORT HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3], uint32_t tile_x, uint32_t tile_y,
-                            ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+HYDRIUM_EXPORT HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3],
+                                            uint32_t tile_x,   uint32_t tile_y,
+                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
     HYDStatusCode ret;
     if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < HYD_ERROR_START)
         return ret;

@@ -2,7 +2,7 @@ project('hydrium', 'c',
     license: ['BSD-2-Clause'],
     version : '0.2.2',
     default_options: [
-        'buildtype=minsize',
+        'buildtype=debugoptimized',
         'c_std=c99',
         'warning_level=1',
     ],

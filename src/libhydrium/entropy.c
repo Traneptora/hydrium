@@ -15,7 +15,7 @@ typedef struct StateFlush {
 
 typedef struct FrequencyEntry {
     int32_t token;
-    size_t frequency;
+    uint32_t frequency;
     int32_t depth;
     int32_t max_depth;
     struct FrequencyEntry *left_child;
@@ -508,12 +508,8 @@ static int symbol_compare(const void *a, const void *b) {
 }
 
 static int huffman_compare(const FrequencyEntry *fa, const FrequencyEntry *fb) {
-    if (!fa)
-        return 1;
-    if (!fb)
-        return -1;
-    const ptrdiff_t pb = fb->frequency;
-    const ptrdiff_t pa = fa->frequency;
+    const int32_t pb = fb->frequency;
+    const int32_t pa = fa->frequency;
     const int32_t ta = fa->token;
     const int32_t tb = fb->token;
     return pa != pb ? (!pb ? -1 : !pa ? 1 : pa - pb) : (!tb ? -1 : !ta ? 1 : ta - tb);
@@ -534,55 +530,62 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t 
     FrequencyEntry *tree = HYD_ALLOCA(allocator, (2 * alphabet_size - 1) * sizeof(FrequencyEntry));
     if (!tree) {
         ret = HYD_NOMEM;
-        goto fail;
+        goto end;
     }
 
-    uint32_t count = 0;
     for (uint32_t token = 0; token < alphabet_size; token++) {
         tree[token].frequency = frequencies[token];
         tree[token].token = 1 + token;
         tree[token].left_child = tree[token].right_child = NULL;
         tree[token].depth = 0;
         tree[token].max_depth = 0;
-        if (tree[token].frequency)
-            count++;
     }
+    if (max_depth < 0)
+        max_depth = hyd_cllog2(alphabet_size);
+
     memset(tree + alphabet_size, 0, (alphabet_size - 1) * sizeof(FrequencyEntry));
     for (uint32_t k = 0; k < alphabet_size - 1; k++) {
         FrequencyEntry *smallest = NULL;
         FrequencyEntry *second = NULL;
-        for (uint32_t j = 2 * k; j < 2 * alphabet_size - 1; j++) {
-            int32_t target = max_depth > 0 ? max_depth - hyd_cllog2(count) : INT32_MAX;
-            if (huffman_compare(smallest, &tree[j]) > 0 && tree[j].max_depth < target) {
+        int32_t nz = 0;
+        for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
+            if (tree[j].frequency)
+                nz++;
+        }
+        int32_t target = max_depth - hyd_cllog2(nz - 1);
+        for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
+            if (tree[j].max_depth >= target)
+                continue;
+            if (!smallest || huffman_compare(&tree[j], smallest) < 0) {
                 second = smallest;
                 smallest = &tree[j];
-            } else if (huffman_compare(second, &tree[j]) > 0 && tree[j].max_depth < target) {
+            } else if (!second || huffman_compare(&tree[j], second) < 0) {
                 second = &tree[j];
             }
         }
-        if (smallest)
-            hyd_swap(FrequencyEntry, *smallest, tree[2 * k]);
-        if (second)
-            hyd_swap(FrequencyEntry, *second, tree[2 * k + 1]);
+        if (!smallest || !second) {
+            ret = HYD_INTERNAL_ERROR;
+            goto end;
+        }
+        if (!second->frequency)
+            break;
+        hyd_swap(FrequencyEntry, *smallest, tree[2 * k]);
         smallest = &tree[2 * k];
+        hyd_swap(FrequencyEntry, *second, tree[2 * k + 1]);
         second = &tree[2 * k + 1];
         FrequencyEntry *entry = &tree[alphabet_size + k];
         entry->frequency = smallest->frequency + second->frequency;
         entry->left_child = smallest;
         entry->right_child = second;
         collect(entry);
-        count--;
     }
 
     for (uint32_t j = 0; j < 2 * alphabet_size - 1; j++) {
-        if (tree[j].token > 0)
+        if (tree[j].token)
             lengths[tree[j].token - 1] = tree[j].depth;
     }
 
-    HYD_FREEA(allocator, tree);
-    return HYD_OK;
-
-fail:
+end:
     HYD_FREEA(allocator, tree);
     return ret;
 }
@@ -723,8 +726,6 @@ end:
     HYD_FREEA(stream->allocator, level1_table);
     return ret;
 }
-
-#include <stdio.h>
 
 HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
     HYDStatusCode ret;
