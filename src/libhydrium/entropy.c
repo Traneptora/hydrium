@@ -606,13 +606,12 @@ static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *
 
     uint64_t code = 0;
     for (int32_t j = 0; j < alphabet_size; j++) {
-        int l = pre_table[j].length;
-        if (!l)
+        if (!pre_table[j].length)
             continue;
         uint32_t s = pre_table[j].symbol;
         table[s].symbol = bit_reverse(code);
-        table[s].length = l;
-        code += UINT64_C(1) << (32 - l);
+        table[s].length = pre_table[j].length;
+        code += UINT64_C(1) << (32 - pre_table[j].length);
     }
 
     if (code && code != (UINT64_C(1) << 32))
