@@ -548,10 +548,8 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t 
         FrequencyEntry *smallest = NULL;
         FrequencyEntry *second = NULL;
         int32_t nz = -1;
-        for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
-            if (tree[j].frequency)
-                nz++;
-        }
+        for (uint32_t j = 2 * k; j < alphabet_size + k; j++)
+            nz += !!tree[j].frequency;
         int32_t target = max_depth - hyd_cllog2(nz);
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
             if (tree[j].max_depth >= target)
