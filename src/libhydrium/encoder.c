@@ -464,20 +464,25 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     uint16_t hf_mult[1024] = { 0 };
     size_t num_non_zeroes = 0;
     for (size_t by = 0; by < encoder->varblock_height; by++) {
-        size_t vy = by << 3;
+        const size_t vy = by << 3;
         for (size_t bx = 0; bx < encoder->varblock_width; bx++) {
-            size_t vx = bx << 3;
-            uint32_t hf = (((((encoder->xyb[1][vy + 7][vx + 7] & INT32_C(0x7FFF)) + (encoder->xyb[2][vy + 7][vx + 7] & INT32_C(0x7FFF))) << 1)
-                + (encoder->xyb[1][vy + 7][vx + 6] & INT32_C(0x7FFF)) + (encoder->xyb[1][vy + 6][vx + 7] & INT32_C(0x7FFF))
-                + (encoder->xyb[2][vy + 7][vx + 6] & INT32_C(0x7FFF)) + (encoder->xyb[2][vy + 6][vx + 7] & INT32_C(0x7FFF))) >> 14) & 0xF;
-            hf_mult[by * encoder->varblock_width + bx] = hf > 5 ? hf : 5;
+            const size_t vx = bx << 3;
+            const uint32_t hf = (((((encoder->xyb[1][vy + 7][vx + 7] & UINT32_C(0x7FFF))
+                                  + (encoder->xyb[2][vy + 7][vx + 7] & UINT32_C(0x7FFF))) << 1)
+                                  + (encoder->xyb[1][vy + 7][vx + 6] & UINT32_C(0x7FFF))
+                                  + (encoder->xyb[1][vy + 6][vx + 7] & UINT32_C(0x7FFF))
+                                  + (encoder->xyb[2][vy + 7][vx + 6] & UINT32_C(0x7FFF))
+                                  + (encoder->xyb[2][vy + 6][vx + 7] & UINT32_C(0x7FFF))) >> 14) & UINT32_C(0xF);
+            const size_t hf_mult_pos = by * encoder->varblock_width + bx;
+            hf_mult[hf_mult_pos] = hyd_max(hf, 5);
             for (int i = 0; i < 3; i++) {
                 size_t nzc = 0;
                 for (int j = 1; j < 64; j++) {
-                    IntPos pos = natural_order[j];
-                    encoder->xyb[i][vy + pos.y][vx + pos.x] =
-                        hf_quant(encoder->xyb[i][vy + pos.y][vx + pos.x], hf_quant_weights[i][j], hf_mult[by * encoder->varblock_width + bx]);
-                    if (encoder->xyb[i][vy + pos.y][vx + pos.x]) {
+                    const size_t py = vy + natural_order[j].y;
+                    const size_t px = vx + natural_order[j].x;
+                    encoder->xyb[i][py][px] =
+                        hf_quant(encoder->xyb[i][py][px], hf_quant_weights[i][j], hf_mult[hf_mult_pos]);
+                    if (encoder->xyb[i][py][px]) {
                         non_zeroes[i][by][bx]++;
                         nzc = j;
                     }
@@ -504,7 +509,9 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     hyd_bitwriter_flush(&encoder->working_writer);
 
     hyd_write_zero_pad(&encoder->writer);
-    hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712}, (const uint32_t[4]){10, 14, 22, 30}, encoder->working_writer.buffer_pos);
+    hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712},
+                                    (const uint32_t[4]){10, 14, 22, 30},
+                                    encoder->working_writer.buffer_pos);
     hyd_write_zero_pad(&encoder->writer);
 
     ret = hyd_flush(encoder);
