@@ -349,7 +349,7 @@ static void forward_dct(HYDEncoder *encoder) {
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
                             scratchblock[0][y][k] += encoder->xyb[c][posy][vx + n] * cosine_lut[k - 1][n];
-                        scratchblock[0][y][k] = hyd_signed_rshift(scratchblock[0][y][k], 18);
+                        scratchblock[0][y][k] = hyd_signed_rshift32(scratchblock[0][y][k], 18);
                     }
                 }
                 for (size_t x = 0; x < 8; x++) {
@@ -360,7 +360,7 @@ static void forward_dct(HYDEncoder *encoder) {
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
                             scratchblock[1][k][x] += scratchblock[0][n][x] * cosine_lut[k - 1][n];
-                        scratchblock[1][k][x] = hyd_signed_rshift(scratchblock[1][k][x], 18);
+                        scratchblock[1][k][x] = hyd_signed_rshift32(scratchblock[1][k][x], 18);
                     }
                 }
                 for (size_t y = 0; y < 8; y++) {
@@ -393,8 +393,7 @@ static size_t get_non_zero_context(size_t predicted, size_t block_context) {
 }
 
 static int16_t hf_quant(int64_t value, int32_t weight, uint16_t hf_mult) {
-    int64_t v = value * weight * hf_mult;
-    return hyd_signed_rshift(v, 14);
+    return hyd_signed_rshift64(value * weight * hf_mult, 14);
 }
 
 static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes, uint8_t non_zeroes[3][32][32]) {

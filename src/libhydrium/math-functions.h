@@ -25,10 +25,22 @@ static inline int hyd_fllog2(unsigned long long n) {
 #endif /* _MSC_VER */
 #endif /* __GNUC__ || __clang__ */
 
-#define hyd_cllog2(n) (hyd_fllog2(n) + !!((n) & ((n) - 1)))
+static inline int hyd_cllog2(const unsigned long long n) {
+    return hyd_fllog2(n) + !!(n & (n - 1));
+}
 
-#define hyd_signed_rshift(v, n) ((v) >= 0 ? (v) >> (n) : -(-(v) >> (n)))
-#define hyd_pack_signed(v) (((v) << 1) ^ -((v) < 0))
+static inline int32_t hyd_signed_rshift32(int32_t v, int n) {
+    return v > 0 ? v >> n : -(-v >> n);
+}
+
+static inline int64_t hyd_signed_rshift64(int64_t v, int n) {
+    return v > 0 ? v >> n : -(-v >> n);
+}
+
+static inline uint32_t hyd_pack_signed(int32_t v) {
+    return (v << 1) ^ -(v < 0);
+}
+
 #define hyd_max(a, b) ((a) > (b) ? (a) : (b))
 #define hyd_max3(a, b, c) hyd_max((a), hyd_max((b), (c)))
 #define hyd_swap(type, a, b) do {\
