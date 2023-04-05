@@ -8,8 +8,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <spng.h>
+
 #include "libhydrium/libhydrium.h"
-#include "lodepng/lodepng.h"
 
 struct memory_holder {
     size_t total_alloced;
@@ -42,10 +43,10 @@ static void mem_free(void *ptr, void *opaque) {
 
 int main(int argc, const char *argv[]) {
     uint64_t width, height;
-    uint8_t *buffer, *output_buffer = NULL;
+    void *buffer = NULL, *output_buffer = NULL;
     HYDEncoder *encoder = NULL;
-    HYDStatusCode status = 1;
-    FILE *fp = stdout;
+    int ret = 1;
+    FILE *fp = stdout, *fin = NULL;
     struct memory_holder holder = { 0 };
 
     fprintf(stderr, "libhydrium version %s\n", HYDRIUM_VERSION_STRING);
@@ -54,26 +55,75 @@ int main(int argc, const char *argv[]) {
         fprintf(stderr, "Usage: %s <input.png> [output.jxl]\n", argv[0]);
         return argc < 2;
     }
-    unsigned w, h;
-    unsigned ret = lodepng_decode24_file(&buffer, &w, &h, argv[1]);
 
-    if (ret) {
-        fprintf(stderr, "%s: error reading PNG file\n", argv[0]);
+    spng_ctx *spng_context = spng_ctx_new(0);
+    if (!spng_context) {
+        fprintf(stderr, "%s: couldn't allocate context\n", argv[0]);
         goto done;
     }
 
-    width = w;
-    height = h;
+    spng_set_crc_action(spng_context, SPNG_CRC_USE, SPNG_CRC_USE);
+    const size_t chunk_limit = 1 << 20;
+    spng_set_chunk_limits(spng_context, chunk_limit, chunk_limit);
+
+    fin = fopen(argv[1], "rb");
+    if (!fin) {
+        fprintf(stderr, "%s: error opening file: %s\n", argv[0], argv[1]);
+        goto done;
+    }
+    spng_set_png_file(spng_context, fin);
+
+    struct spng_ihdr ihdr;
+    ret = spng_get_ihdr(spng_context, &ihdr);
+    if (ret) {
+        fprintf(stderr, "%s: spng_get_ihdr() error: %s\n", argv[0], spng_strerror(ret));
+        goto done;
+    }
+
+    width = ihdr.width;
+    height = ihdr.height;
 
     if (width > (UINT64_C(1) << 30) || height > (UINT64_C(1) << 30) || width * height > (UINT64_C(1) << 40)) {
         fprintf(stderr, "%s: buffer too big\n", argv[0]);
         goto done;
     }
 
-    size_t bufsize = 3 * width * height;
-    output_buffer = malloc(bufsize);
-    if (!output_buffer)
+    enum spng_format sample_fmt = ihdr.bit_depth > 8 ? SPNG_FMT_RGBA16 : SPNG_FMT_RGB8;
+
+    size_t decoded_png_size;
+    ret = spng_decoded_image_size(spng_context, sample_fmt, &decoded_png_size);
+    if (ret) {
+        fprintf(stderr, "%s: spng error: %s\n", argv[0], spng_strerror(ret));
         goto done;
+    }
+
+    size_t spng_stride = decoded_png_size / height;
+
+    if (ihdr.interlace_method != SPNG_INTERLACE_NONE)
+        buffer = malloc(decoded_png_size);
+    else
+        buffer = malloc(spng_stride * 256);
+
+    if (!buffer) {
+        fprintf(stderr, "%s: not enough memory\n", argv[0]);
+        goto done;
+    }
+
+    size_t output_bufsize = 1 << 20;
+    output_buffer = malloc(output_bufsize);
+    if (!output_buffer) {
+        fprintf(stderr, "%s: not enough memory\n", argv[0]);
+        goto done;
+    }
+
+    if (ihdr.interlace_method != SPNG_INTERLACE_NONE)
+        ret = spng_decode_image(spng_context, buffer, decoded_png_size, sample_fmt, 0);
+    else
+        ret = spng_decode_image(spng_context, NULL, 0, sample_fmt, SPNG_DECODE_PROGRESSIVE);
+    if (ret) {
+        fprintf(stderr, "%s: spng error: %s\n", argv[0], spng_strerror(ret));
+        goto done;
+    }
 
     HYDAllocator allocator;
 
@@ -97,33 +147,58 @@ int main(int argc, const char *argv[]) {
     }
 
     hyd_set_metadata(encoder, &metadata);
-    hyd_provide_output_buffer(encoder, output_buffer, bufsize);
+    hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
     const uint32_t tile_width = (width + 255) / 256;
     const uint32_t tile_height = (height + 255) / 256;
+    struct spng_row_info row_info = {0};
     for (uint32_t y = 0; y < tile_height; y++) {
+        if (ihdr.interlace_method == SPNG_INTERLACE_NONE) {
+            size_t gy = 0;
+            do {
+                ret = spng_get_row_info(spng_context, &row_info);
+                if (ret)
+                    break;
+                ret = spng_decode_row(spng_context, buffer + gy * spng_stride, spng_stride);
+            } while (!ret && ++gy < 256);
+
+            if (ret && ret != SPNG_EOI) {
+                fprintf(stderr, "%s: spng error: %s\n", argv[0], spng_strerror(ret));
+                goto done;
+            }
+        }
         for (uint32_t x = 0; x < tile_width; x++) {
-            uint8_t *buff_offset = buffer + (y << 8) * width * 3 + (x << 8) * 3;
-            const uint8_t *const rgb[3] = {buff_offset, buff_offset + 1, buff_offset + 2};
-            status = hyd_send_tile8(encoder, rgb, x, y, width * 3, 3);
-            if (status != HYD_NEED_MORE_OUTPUT && status < HYD_ERROR_START)
+            if (ihdr.bit_depth > 8) {
+                const uint16_t *tile_buffer = ((const uint16_t *)buffer) + x * 256 * 4;
+                const uint16_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
+                ret = hyd_send_tile(encoder, rgb, x, y, width * 4, 4);
+            } else {
+                const uint8_t *tile_buffer = ((const uint8_t *)buffer) + x * 256 * 3;
+                const uint8_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
+                ret = hyd_send_tile8(encoder, rgb, x, y, width * 3, 3);
+            }
+            if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
                 goto done;
             do {
                 size_t written;
                 hyd_release_output_buffer(encoder, &written);
                 fwrite(output_buffer, written, 1, fp);
-                hyd_provide_output_buffer(encoder, output_buffer, bufsize);
-                status = hyd_flush(encoder);
-            } while (status == HYD_NEED_MORE_OUTPUT);
-            if (status != HYD_OK)
+                hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+                ret = hyd_flush(encoder);
+            } while (ret == HYD_NEED_MORE_OUTPUT);
+            if (ret != HYD_OK)
                 goto done;
         }
     }
 
-    status = 0;
+    ret = 0;
 
 done:
     if (fp)
         fclose(fp);
+    if (fin)
+        fclose(fin);
+    if (spng_context)
+        spng_ctx_free(spng_context);
     if (encoder)
         hyd_encoder_destroy(encoder);
     if (buffer)
@@ -134,5 +209,5 @@ done:
     fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
         (long long unsigned)holder.total_alloced, (long long unsigned)holder.max_alloced);
 
-    return status;
+    return ret;
 }

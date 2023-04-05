@@ -110,7 +110,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
     hyd_write_bool(bw, 1);
     ret = hyd_entropy_init_stream(&nested, stream->allocator, bw, stream->num_dists, (const uint8_t[]){0},
         1, 1, 64);
-    hyd_entropy_set_hybrid_config(&nested, 0, 1, 4, 0, 0);
+    hyd_entropy_set_hybrid_config(&nested, 0, 2, 4, 1, 0);
     if (ret < HYD_ERROR_START)
         goto fail;
     uint8_t mtf[256];

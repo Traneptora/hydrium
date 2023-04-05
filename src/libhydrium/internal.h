@@ -5,7 +5,7 @@
 #define HYDRIUM_INTERNAL_H_
 
 #include "bitwriter.h"
-#include "libhydrium.h"
+#include "libhydrium/libhydrium.h"
 
 #define HYD_ALLOCA(allocator, size) ((allocator)->alloc_func((size), (allocator)->opaque))
 #define HYD_FREEA(allocator, ptr) if (ptr) {((allocator)->free_func((ptr), (allocator)->opaque)), (ptr) = NULL;}

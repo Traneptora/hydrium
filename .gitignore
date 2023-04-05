@@ -58,3 +58,6 @@ dkms.conf
 
 # Valgrind dumps
 vgcore.*
+
+# subprojects
+subprojects/

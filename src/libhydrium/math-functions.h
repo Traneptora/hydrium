@@ -1,6 +1,8 @@
 #ifndef HYDRIUM_MATH_FUNCTIONS_H_
 #define HYDRIUM_MATH_FUNCTIONS_H_
 
+#include <stdint.h>
+
 #define hyd_fllog2__(n) (__builtin_clzll(1) - __builtin_clzll((n)|1))
 
 #if defined(__GNUC__) || defined(__clang__)

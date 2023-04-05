@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "libhydrium.h"
+#include "libhydrium/libhydrium.h"
 
 typedef struct HYDBitWriter {
     uint8_t *buffer;

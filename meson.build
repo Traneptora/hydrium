@@ -25,7 +25,7 @@ wanted_cflags = [
 ldflags = []
 
 wanted_ldflags = [
-    '-Wl,-s',
+
 ]
 
 cc = meson.get_compiler('c')
@@ -41,13 +41,11 @@ libhydrium_sources = files(
     'src/libhydrium/xyb.c',
 )
 
-lodepng_sources = files(
-    'src/lodepng/lodepng.c',
-)
-
 hydrium_sources = files(
     'src/hydrium.c'
 )
+
+libhydrium_includes = include_directories('src/include')
 
 libhydrium = library('hydrium',
     sources: libhydrium_sources,
@@ -55,14 +53,20 @@ libhydrium = library('hydrium',
     c_args: cflags,
     link_args: ldflags,
     install: true,
+    include_directories: libhydrium_includes,
 )
 
+libhydrium_dep = declare_dependency(include_directories: libhydrium_includes, link_with: libhydrium)
+libspng_dep = dependency('spng', fallback : ['spng', 'spng_dep'], default_options: ['default_library=static'])
+
 hydrium = executable('hydrium',
-    sources: [hydrium_sources, lodepng_sources],
+    sources: [hydrium_sources],
     link_with: libhydrium,
+    dependencies: [libhydrium_dep, libspng_dep],
     c_args: cflags,
     link_args: ldflags,
     install: true,
+    include_directories: libhydrium_includes,
 )
 
-install_headers('src/libhydrium/libhydrium.h', subdir: 'libhydrium')
+install_headers('src/include/libhydrium/libhydrium.h', subdir: 'libhydrium')
