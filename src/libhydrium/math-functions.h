@@ -3,21 +3,19 @@
 
 #include <stdint.h>
 
-#define hyd_fllog2__(n) (__builtin_clzll(1) - __builtin_clzll((n)|1))
-
 #if defined(__GNUC__) || defined(__clang__)
-#define hyd_fllog2(n) hyd_fllog2__(n)
+#define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll(n))
 #else
 #ifdef _MSC_VER
 #include <inttrin.h>
-static inline int __builtin_clzll(unsigned long long x) {
+static inline int __builtin_clzll(const unsigned long long x) {
 #ifdef _WIN64
     return (int)_lzcnt_u64(x);
 #else
     return !!unsigned(x >> 32) ? __builtin_clz((unsigned)(x >> 32)) : 32 + __builtin_clz((unsigned)x);
 #endif
 }
-#define hyd_fllog2(n) hyd_fllog2__(n)
+#define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll(n))
 #else /* _MSC_VER */
 static inline int hyd_fllog2(unsigned long long n) {
     #define S(k) if (n >= (1ULL << k)) { i += k; n >>= k; }
@@ -27,19 +25,22 @@ static inline int hyd_fllog2(unsigned long long n) {
 #endif /* _MSC_VER */
 #endif /* __GNUC__ || __clang__ */
 
+/* ceil(log2(n)) */
 static inline int hyd_cllog2(const unsigned long long n) {
     return hyd_fllog2(n) + !!(n & (n - 1));
 }
 
-static inline int32_t hyd_signed_rshift32(int32_t v, int n) {
-    return v > 0 ? v >> n : -(-v >> n);
+/* v / (1 << n) */
+static inline int32_t hyd_signed_rshift32(const int32_t v, const int n) {
+    return v >= 0 ? v >> n : -(-v >> n);
 }
 
-static inline int64_t hyd_signed_rshift64(int64_t v, int n) {
-    return v > 0 ? v >> n : -(-v >> n);
+/* v / (1 << n) */
+static inline int64_t hyd_signed_rshift64(const int64_t v, const int n) {
+    return v >= 0 ? v >> n : -(-v >> n);
 }
 
-static inline uint32_t hyd_pack_signed(int32_t v) {
+static inline uint32_t hyd_pack_signed(const int32_t v) {
     return (v << 1) ^ -(v < 0);
 }
 
