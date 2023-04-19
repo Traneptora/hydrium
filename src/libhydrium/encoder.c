@@ -273,7 +273,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
     ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, (const uint8_t[1]){0}, 1, 1, 0);
     if (ret < HYD_ERROR_START)
         return ret;
-    hyd_entropy_set_hybrid_config(&stream, 0, 1, 4, 1, 0);
+    hyd_entropy_set_hybrid_config(&stream, 0, 1, 7, 1, 0);
     const int shift[3] = {3, 0, -1};
     for (int i = 0; i < 3; i++) {
         int c = i < 2 ? 1 - i : i;
@@ -291,7 +291,8 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
                 int32_t max = w < n ? n : w;
                 v = v < min ? min : v > max ? max : v;
                 int32_t diff = encoder->xyb[c][yv][xv] - v;
-                hyd_entropy_send_symbol(&stream, 0, hyd_pack_signed(diff));
+                diff = hyd_pack_signed(diff);
+                hyd_entropy_send_symbol(&stream, 0, diff);
             }
         }
     }
@@ -393,7 +394,11 @@ static size_t get_non_zero_context(size_t predicted, size_t block_context) {
 }
 
 static int16_t hf_quant(int64_t value, int32_t weight, uint16_t hf_mult) {
-    return hyd_signed_rshift64(value * weight * hf_mult, 14);
+    const int64_t v = hyd_signed_rshift64(value * weight * hf_mult, 14);
+    const int64_t a = v >= 0 ? v : -v;
+    if (a < hf_mult - 3)
+        return 0;
+    return v;
 }
 
 static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes, uint8_t non_zeroes[3][32][32]) {
@@ -431,7 +436,7 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
                     int prev = k ? !!encoder->xyb[c][vy + prev_pos.y][vx + prev_pos.x] : non_zero_count <= 4;
                     size_t coeff_context = hist_context + prev +
                         ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k + 1]) << 1);
-                    int32_t value = hyd_pack_signed(encoder->xyb[c][vy + pos.y][vx + pos.x]);
+                    uint32_t value = hyd_pack_signed(encoder->xyb[c][vy + pos.y][vx + pos.x]);
                     ret = hyd_entropy_send_symbol(&stream, coeff_context, value);
                     if (ret < HYD_ERROR_START)
                         return ret;
@@ -441,9 +446,9 @@ static HYDStatusCode write_hf_coeffs(HYDEncoder *encoder, size_t num_non_zeroes,
             }
         }
     }
-    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_ans_write_stream_header(&stream)) < HYD_ERROR_START)
         return ret;
-    if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
+    if ((ret = hyd_ans_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
 
     return encoder->working_writer.overflow_state;
