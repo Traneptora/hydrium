@@ -155,7 +155,7 @@ static HYDStatusCode write_hybrid_uint_config(HYDEntropyStream *stream, const HY
     // msb_in_token
     hyd_write(bw, config->msb_in_token,
         hyd_cllog2(1 + config->split_exponent));
-    // lsb_in_token is 0 bits
+    // lsb_in_token
     hyd_write(bw, config->lsb_in_token,
         hyd_cllog2(1 + config->split_exponent - config->msb_in_token));
     return bw->overflow_state;
