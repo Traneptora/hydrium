@@ -132,6 +132,10 @@ int main(int argc, const char *argv[]) {
     allocator.opaque = &holder;
 
     encoder = hyd_encoder_new(&allocator);
+    if (!encoder) {
+        fprintf(stderr, "%s: error allocating encoder\n", argv[0]);
+        goto done;
+    }
 
     HYDImageMetadata metadata;
     metadata.width = width;
