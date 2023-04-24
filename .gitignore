@@ -60,4 +60,4 @@ dkms.conf
 vgcore.*
 
 # subprojects
-subprojects/
+subprojects/spng
