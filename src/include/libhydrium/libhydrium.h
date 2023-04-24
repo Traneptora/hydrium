@@ -167,7 +167,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  * the image width and height were provided with hyd_set_metadata, hydrium will know how big these tiles should be
  * and it will not overrun the buffers.
  *
- * If the encoded tile is fully written to the output buffer, then HYD_NEED_MORE_INPUT will be returned, and it
+ * If the encoded tile is fully written to the output buffer, then HYD_OK will be returned, and it
  * is time to send another tile. Tiles may be sent in (almost) any order, although the lower-right-most tile must
  * be sent last. When the tile in the lower right of the image is sent, it is assumed that no more tiles will be sent.
  * Sending another tile after that one will result in garbage trailing data after the end of the JPEG XL file.
@@ -175,7 +175,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  * Any tile except the last one may be left unsent, and these gaps will be populated by zeroes.
  *
  * If the last tile is sent and the output buffer is not full, HYD_OK is returned. Any return value other than
- * HYD_NEED_MORE_INPUT, HYD_NEED_MORE_OUTPUT, or HYD_OK is an error.
+ * HYD_NEED_MORE_OUTPUT or HYD_OK is an error.
  *
  * @param encoder A HYDEncoder struct.
  * @param buffer An array of three buffers of pixel data.
