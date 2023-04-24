@@ -15,8 +15,8 @@
  * 0x1XXXYYYZZZ where XXX is the major version, YYY is the minor version,
  * and ZZZ is the point release.
  */
-#define HYDRIUM_VERSION_INT 0x1000002002
-#define HYDRIUM_VERSION_STRING "0.2.2"
+#define HYDRIUM_VERSION_INT 0x1000002003
+#define HYDRIUM_VERSION_STRING "0.2.3"
 
 #ifdef _WIN32
     #ifdef HYDRIUM_INTERNAL_BUILD

@@ -1,6 +1,6 @@
 project('hydrium', 'c',
     license: ['BSD-2-Clause'],
-    version : '0.2.2',
+    version : '0.2.3',
     default_options: [
         'buildtype=minsize',
         'c_std=c99',
@@ -9,7 +9,6 @@ project('hydrium', 'c',
 )
 
 cflags = [
-    '-DLODEPNG_NO_COMPILE_ENCODER',
     '-DHYDRIUM_INTERNAL_BUILD',
 ]
 
