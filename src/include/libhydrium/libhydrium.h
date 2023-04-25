@@ -90,6 +90,26 @@ typedef struct HYDImageMetadata {
      * and a D65 white point.
      */
     int linear_light;
+
+    /**
+     * Indicates the horizontal size of a tile. Valid values are
+     * 0, 1, 2, and 3, corresponding to 256, 512, 1024, and 2048
+     * pixels wide.
+     *
+     * Tiles may be larger than the image width, in which case only
+     * one tile will exist in the horizontal direction.
+     */
+    int tile_size_shift_x;
+
+    /**
+     * Indicates the vertical size of a tile. Valid values are
+     * 0, 1, 2, and 3, corresponding to 256, 512, 1024, and 2048
+     * pixels high.
+     *
+     * Tiles may be larger than the image height, in which case only
+     * one tile will exist in the vertical direction.
+     */
+    int tile_size_shift_y;
 } HYDImageMetadata;
 
 /* opaque structure */
@@ -134,7 +154,10 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
 /**
  * @brief Provide a buffer of 16-bit RGB pixel data to the hydrium encoder for it to encode.
  *
- * Hydrium encodes one tile at a time, and no tile references any other tile. A tile is 256x256.
+ * Hydrium encodes one tile at a time, and no tile references any other tile. A tile is 256x256, unless
+ * tile_size_shift_x and/or tile_size_shift_y are set to something nonzero. In that case, the size of a tile
+ * will be WxH, where W is (256 << tile_size_shift_x) and H is (256 << tile_size_shift_y).
+ *
  * This function accepts an array of three buffers of pixel data, although they may overlap.
  *
  * The X and Y coordinates of the tile passed refer to the coordinates in numbers of tiles,
@@ -161,9 +184,9 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  * hyd_provide_output_buffer. After you provide another output buffer, do not send the same tile again, instead
  * call hyd_flush to flush the remaining encoded tile to the output buffer.
  *
- * Tiles are typically 256x256 although images are not always a multiple of 256 pixels in each direction. If so,
- * the rightmost column and bottom-most row of tiles will be smaller. Make sure you set row_stride correctly for
- * the right-most column, as hydrium will not automatically assume it is smaller than the one provided. Because
+ * Tiles are always multiples of 256x256, although images are not always a multiple of 256 pixels in each direction.
+ * If so, the rightmost column and bottom-most row of tiles will be smaller. Make sure you set row_stride correctly
+ * for the right-most column, as hydrium will not automatically assume it is smaller than the one provided. Because
  * the image width and height were provided with hyd_set_metadata, hydrium will know how big these tiles should be
  * and it will not overrun the buffers.
  *
