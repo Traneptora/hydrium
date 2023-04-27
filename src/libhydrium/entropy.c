@@ -13,6 +13,13 @@ typedef struct StateFlush {
     uint16_t value;
 } StateFlush;
 
+typedef struct StateFlushChain {
+    StateFlush *state_flushes;
+    size_t pos;
+    size_t capacity;
+    struct StateFlushChain *prev_chain;
+} StateFlushChain;
+
 typedef struct FrequencyEntry {
     int32_t token;
     uint32_t frequency;
@@ -877,9 +884,42 @@ HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream) {
     return ret;
 }
 
+static HYDStatusCode append_state_flush(const HYDAllocator *allocator, StateFlushChain **flushes,
+                                        size_t token_index, uint16_t value) {
+    if ((*flushes)->pos == (*flushes)->capacity) {
+        StateFlushChain *chain = HYD_ALLOCA(allocator, sizeof(StateFlushChain));
+        if (!chain)
+            return HYD_NOMEM;
+        chain->state_flushes = HYD_ALLOCA(allocator, sizeof(StateFlush) << 10);
+        if (!chain->state_flushes){
+            HYD_FREEA(allocator, chain);
+            return HYD_NOMEM;
+        }
+        chain->capacity = 1 << 10;
+        chain->pos = 0;
+        chain->prev_chain = *flushes;
+        *flushes = chain;
+    }
+    (*flushes)->state_flushes[(*flushes)->pos++] = (StateFlush){token_index, value};
+
+    return HYD_OK;
+}
+
+static StateFlush *pop_state_flush(const HYDAllocator *allocator, StateFlushChain **flushes) {
+    if ((*flushes)->pos > 0)
+        return &(*flushes)->state_flushes[--(*flushes)->pos];
+    StateFlushChain *prev_chain = (*flushes)->prev_chain;
+    if (!prev_chain)
+        return NULL;
+    HYD_FREEA(allocator, (*flushes)->state_flushes);
+    HYD_FREEA(allocator, *flushes);
+    *flushes = prev_chain;
+    return pop_state_flush(allocator, flushes);
+}
+
 HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count) {
     HYDStatusCode ret = HYD_OK;
-    StateFlush *flushes = NULL;
+    StateFlushChain flushes_base = { 0 }, *flushes = &flushes_base;
     HYDBitWriter *bw = stream->bw;
     int log_alphabet_size = hyd_cllog2(stream->max_alphabet_size);
     if (log_alphabet_size < 5)
@@ -896,13 +936,14 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         goto end;
     }
 
-    flushes = HYD_ALLOCA(stream->allocator, symbol_count * sizeof(StateFlush));
-    if (!flushes) {
+    flushes->state_flushes = HYD_ALLOCA(stream->allocator, sizeof(StateFlush) << 10);
+    if (!flushes->state_flushes) {
         ret = HYD_NOMEM;
         goto end;
     }
+    flushes->capacity = 1 << 10;
+
     uint32_t state = 0x130000;
-    size_t flush_pos = 0;
     const HYDHybridSymbol *symbols = stream->symbols + symbol_start;
     for (size_t p2 = 0; p2 < symbol_count; p2++) {
         const size_t p = symbol_count - p2 - 1;
@@ -911,7 +952,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         const size_t index = cluster * stream->max_alphabet_size + symbol;
         const uint16_t freq = stream->frequencies[index];
         if ((state >> 20) >= freq) {
-            flushes[flush_pos++] = (StateFlush){p, state & 0xFFFF};
+            append_state_flush(stream->allocator, &flushes, p, state & 0xFFFF);
             state >>= 16;
         }
         const uint16_t offset = state % freq;
@@ -930,17 +971,30 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         }
         state = ((state / freq) << 12) | (i << log_bucket_size) | pos;
     }
-    flushes[flush_pos++] = (StateFlush){0, (state >> 16) & 0xFFFF};
-    flushes[flush_pos++] = (StateFlush){0, state & 0xFFFF};
+    append_state_flush(stream->allocator, &flushes, 0, (state >> 16) & 0xFFFF);
+    append_state_flush(stream->allocator, &flushes, 0, state & 0xFFFF);
     for (size_t p = 0; p < symbol_count; p++) {
-        while (flush_pos > 0 && p >= flushes[flush_pos - 1].token_index)
-            hyd_write(bw, flushes[--flush_pos].value, 16);
+        StateFlush *flush;
+        while ((flush = pop_state_flush(stream->allocator, &flushes))) {
+            if (p >= flush->token_index) {
+                hyd_write(bw, flush->value, 16);
+            } else {
+                flushes->pos++;
+                break;
+            }
+        }
         hyd_write(bw, symbols[p].residue, symbols[p].residue_bits);
     }
 
     ret = bw->overflow_state;
 
 end:
-    HYD_FREEA(stream->allocator, flushes);
+    while (flushes->prev_chain) {
+        StateFlushChain *prev = flushes->prev_chain;
+        HYD_FREEA(stream->allocator, flushes->state_flushes);
+        HYD_FREEA(stream->allocator, flushes);
+        flushes = prev;
+    }
+    HYD_FREEA(stream->allocator, flushes->state_flushes);
     return ret;
 }
