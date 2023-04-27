@@ -99,10 +99,21 @@ int main(int argc, const char *argv[]) {
 
     size_t spng_stride = decoded_png_size / height;
 
+    HYDImageMetadata metadata;
+    metadata.width = width;
+    metadata.height = height;
+    metadata.linear_light = 0;
+    metadata.tile_size_shift_x = 3;
+    metadata.tile_size_shift_y = 3;
+    const uint32_t tile_size_x = 256 << metadata.tile_size_shift_x;
+    const uint32_t tile_size_y = 256 << metadata.tile_size_shift_y;
+    const uint32_t tile_width = (width + tile_size_x - 1) >> (8 + metadata.tile_size_shift_x);
+    const uint32_t tile_height = (height + tile_size_y - 1) >> (8 + metadata.tile_size_shift_y);
+
     if (ihdr.interlace_method != SPNG_INTERLACE_NONE)
         buffer = malloc(decoded_png_size);
     else
-        buffer = malloc(spng_stride * 256);
+        buffer = malloc(spng_stride * tile_size_y);
 
     if (!buffer) {
         fprintf(stderr, "%s: not enough memory\n", argv[0]);
@@ -137,11 +148,6 @@ int main(int argc, const char *argv[]) {
         goto done;
     }
 
-    HYDImageMetadata metadata;
-    metadata.width = width;
-    metadata.height = height;
-    metadata.linear_light = 0;
-
     if (argc > 2) {
         fp = fopen(argv[2], "wb");
         if (!fp) {
@@ -150,10 +156,10 @@ int main(int argc, const char *argv[]) {
         }
     }
 
-    hyd_set_metadata(encoder, &metadata);
+    if ((ret = hyd_set_metadata(encoder, &metadata)) < HYD_ERROR_START)
+        goto done;
+
     hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
-    const uint32_t tile_width = (width + 255) / 256;
-    const uint32_t tile_height = (height + 255) / 256;
     struct spng_row_info row_info = {0};
     for (uint32_t y = 0; y < tile_height; y++) {
         if (ihdr.interlace_method == SPNG_INTERLACE_NONE) {
@@ -163,7 +169,7 @@ int main(int argc, const char *argv[]) {
                 if (ret)
                     break;
                 ret = spng_decode_row(spng_context, buffer + gy * spng_stride, spng_stride);
-            } while (!ret && ++gy < 256);
+            } while (!ret && ++gy < tile_size_y);
 
             if (ret && ret != SPNG_EOI) {
                 fprintf(stderr, "%s: spng error: %s\n", argv[0], spng_strerror(ret));
@@ -172,11 +178,11 @@ int main(int argc, const char *argv[]) {
         }
         for (uint32_t x = 0; x < tile_width; x++) {
             if (ihdr.bit_depth > 8) {
-                const uint16_t *tile_buffer = ((const uint16_t *)buffer) + x * 256 * 4;
+                const uint16_t *tile_buffer = ((const uint16_t *)buffer) + x * tile_size_x * 4;
                 const uint16_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
                 ret = hyd_send_tile(encoder, rgb, x, y, width * 4, 4);
             } else {
-                const uint8_t *tile_buffer = ((const uint8_t *)buffer) + x * 256 * 3;
+                const uint8_t *tile_buffer = ((const uint8_t *)buffer) + x * tile_size_x * 3;
                 const uint8_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
                 ret = hyd_send_tile8(encoder, rgb, x, y, width * 3, 3);
             }

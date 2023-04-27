@@ -45,6 +45,8 @@ static inline uint32_t hyd_pack_signed(const int32_t v) {
 }
 
 #define hyd_max(a, b) ((a) > (b) ? (a) : (b))
+#define hyd_min(a, b) ((a) < (b) ? (a) : (b))
+#define hyd_clamp(v, min, max) ((v) < (min) ? (min) : (v) > (max) ? (max) : (v))
 #define hyd_max3(a, b, c) hyd_max((a), hyd_max((b), (c)))
 #define hyd_swap(type, a, b) do {\
     const type __hyd_swap_temp = (b); (b) = (a); (a) = __hyd_swap_temp;\

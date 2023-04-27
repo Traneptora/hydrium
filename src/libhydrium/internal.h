@@ -19,7 +19,7 @@ struct HYDEncoder {
     HYDImageMetadata metadata;
 
     /* 256x256 tile */
-    int16_t xyb[3][256][256];
+    int16_t *xyb;
     uint8_t working_buffer[528288];
 
     uint8_t *out;
@@ -30,12 +30,14 @@ struct HYDEncoder {
     HYDBitWriter working_writer;
     size_t copy_pos;
 
-    size_t group_x;
-    size_t group_y;
-    size_t group_width;
-    size_t group_height;
-    size_t varblock_width;
-    size_t varblock_height;
+    size_t tile_count_x;
+    size_t tile_count_y;
+    size_t lf_group_x;
+    size_t lf_group_y;
+    size_t lf_group_width;
+    size_t lf_group_height;
+    size_t lf_varblock_width;
+    size_t lf_varblock_height;
 
     int wrote_header;
     int wrote_frame_header;

@@ -42,8 +42,8 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
+    HYD_FREE(encoder, encoder->xyb)
     HYD_FREE(encoder, encoder);
-
     return HYD_OK;
 }
 
@@ -61,6 +61,13 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     if (width64 > (1 << 20) || height64 > (1 << 20) || width64 * height64 > (1 << 28))
         encoder->level10 = 1;
 
+    if (metadata->tile_size_shift_x < 0 || metadata->tile_size_shift_x > 3)
+        return HYD_API_ERROR;
+    if (metadata->tile_size_shift_y < 0 || metadata->tile_size_shift_y > 3)
+        return HYD_API_ERROR;
+
+    encoder->tile_count_x = 1 << metadata->tile_size_shift_x;
+    encoder->tile_count_y = 1 << metadata->tile_size_shift_y;
     return HYD_OK;
 }
 

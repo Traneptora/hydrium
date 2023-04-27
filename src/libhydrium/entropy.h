@@ -66,9 +66,12 @@ HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t mi
 HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uint32_t symbol);
 
 HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream);
+HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count);
 HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream);
 
 HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream);
-HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream);
+HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_offset, size_t symbol_count);
+
+void hyd_entropy_stream_destroy(HYDEntropyStream *stream);
 
 #endif /* HYD_ENTROPY_H_ */
