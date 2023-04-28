@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #if defined(__GNUC__) || defined(__clang__)
-#define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll(n))
+#define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll((n)|1))
 #else
 #ifdef _MSC_VER
 #include <inttrin.h>
