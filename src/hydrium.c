@@ -12,42 +12,14 @@
 
 #include "libhydrium/libhydrium.h"
 
-struct memory_holder {
-    size_t total_alloced;
-    size_t current_alloced;
-    size_t max_alloced;
-};
-
-static void *mem_alloc(size_t size, void *opaque) {
-    struct memory_holder *holder = opaque;
-    size += sizeof(size_t);
-    void *ptr = malloc(size);
-    if (!ptr)
-        return NULL;
-    holder->total_alloced += size;
-    holder->current_alloced += size;
-    if (holder->current_alloced > holder->max_alloced)
-        holder->max_alloced = holder->current_alloced;
-    *(size_t *)ptr = size;
-    return ptr + sizeof(size_t);
-}
-
-static void mem_free(void *ptr, void *opaque) {
-    if (!ptr)
-        return;
-    struct memory_holder *holder = opaque;
-    void *og_ptr = ptr - sizeof(size_t);
-    holder->current_alloced -= *(size_t *)og_ptr;
-    free(og_ptr);
-}
-
 int main(int argc, const char *argv[]) {
     uint64_t width, height;
     void *buffer = NULL, *output_buffer = NULL;
     HYDEncoder *encoder = NULL;
+    HYDAllocator *allocator = NULL;
     int ret = 1;
     FILE *fp = stdout, *fin = NULL;
-    struct memory_holder holder = { 0 };
+    HYDMemoryProfiler profiler = { 0 };
 
     fprintf(stderr, "libhydrium version %s\n", HYDRIUM_VERSION_STRING);
 
@@ -136,13 +108,13 @@ int main(int argc, const char *argv[]) {
         goto done;
     }
 
-    HYDAllocator allocator;
+    allocator = hyd_profiling_allocator_new(&profiler);
+    if (!allocator) {
+        fprintf(stderr, "%s: error allocating encoder\n", argv[0]);
+        goto done;
+    }
 
-    allocator.alloc_func = &mem_alloc;
-    allocator.free_func = &mem_free;
-    allocator.opaque = &holder;
-
-    encoder = hyd_encoder_new(&allocator);
+    encoder = hyd_encoder_new(allocator);
     if (!encoder) {
         fprintf(stderr, "%s: error allocating encoder\n", argv[0]);
         goto done;
@@ -215,9 +187,11 @@ done:
         free(buffer);
     if (output_buffer)
         free(output_buffer);
+    if (allocator)
+        hyd_profiling_allocator_destroy(allocator);
 
     fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
-        (long long unsigned)holder.total_alloced, (long long unsigned)holder.max_alloced);
+        (long long unsigned)profiler.total_alloced, (long long unsigned)profiler.max_alloced);
 
     return ret;
 }

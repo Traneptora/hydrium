@@ -9,6 +9,7 @@
 #include "entropy.h"
 #include "internal.h"
 #include "math-functions.h"
+#include "memory.h"
 #include "xyb.h"
 
 typedef struct IntPos {
@@ -225,7 +226,8 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     }
 
     if (!encoder->xyb)
-        encoder->xyb = HYD_ALLOC(encoder, 3 * encoder->lf_group_height * encoder->lf_group_width * sizeof(int16_t));
+        encoder->xyb = hyd_malloc(&encoder->allocator,
+            3 * encoder->lf_group_height * encoder->lf_group_width * sizeof(int16_t));
     if (!encoder->xyb)
         return HYD_NOMEM;
 
@@ -475,15 +477,11 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
     return encoder->working_writer.overflow_state;
 }
 
-/* TODO: use realloc() instead of malloc() and memcpy() */
 static HYDStatusCode realloc_working_buffer(HYDAllocator *allocator, uint8_t **buffer, size_t *buffer_size) {
     size_t new_size = *buffer_size << 1;
-    uint8_t *new_buffer = HYD_ALLOCA(allocator, new_size);
+    uint8_t *new_buffer = hyd_realloc(allocator, *buffer, new_size);
     if (!new_buffer)
         return HYD_NOMEM;
-
-    memcpy(new_buffer, *buffer, *buffer_size);
-    HYD_FREEA(allocator, *buffer);
     *buffer = new_buffer;
     *buffer_size = new_size;
 
@@ -498,7 +496,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     HYDEntropyStream hf_stream = { 0 };
     HYDStatusCode ret = HYD_OK;
     if (!encoder->working_writer.buffer) {
-        encoder->working_writer.buffer = HYD_ALLOC(encoder, 1 << 12);
+        encoder->working_writer.buffer = hyd_malloc(&encoder->allocator, 1 << 12);
         if (!encoder->working_writer.buffer) {
             ret = HYD_NOMEM;
             goto end;
@@ -519,13 +517,13 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
     const size_t num_groups = ((encoder->lf_group_width + 255) >> 8) * ((encoder->lf_group_height + 255) >> 8);
 
     const size_t nzero_size = (num_groups << 11) + (num_groups << 10);
-    non_zeroes = HYD_ALLOC(encoder, nzero_size); // num_groups * 3 * 32 * 32
-    hf_mult = HYD_ALLOC(encoder, sizeof(uint16_t) * encoder->lf_varblock_width * encoder->lf_varblock_height);
+    non_zeroes = hyd_calloc(&encoder->allocator, 1, nzero_size); // num_groups * 3 * 32 * 32
+    hf_mult = hyd_malloc(&encoder->allocator,
+        sizeof(uint16_t) * encoder->lf_varblock_width * encoder->lf_varblock_height);
     if (!non_zeroes || !hf_mult) {
         ret = HYD_NOMEM;
         goto end;
     }
-    memset(non_zeroes, 0, nzero_size);
 
     size_t non_zero_count = 0;
     size_t gindex = 0;
@@ -577,7 +575,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
     // Output sections to working buffer
 
-    section_endpos = num_groups > 1 ? HYD_ALLOC(encoder, (2 + 1 + num_groups) * sizeof(size_t)) : NULL;
+    section_endpos = num_groups > 1 ? hyd_calloc(&encoder->allocator, (2 + 1 + num_groups), sizeof(size_t)) : NULL;
     if (num_groups > 1 && !section_endpos) {
         ret = HYD_NOMEM;
         goto end;
@@ -663,9 +661,9 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
 end:
     hyd_entropy_stream_destroy(&hf_stream);
-    HYD_FREE(encoder, section_endpos);
-    HYD_FREE(encoder, hf_mult);
-    HYD_FREE(encoder, non_zeroes);
+    hyd_free(&encoder->allocator, section_endpos);
+    hyd_free(&encoder->allocator, hf_mult);
+    hyd_free(&encoder->allocator, non_zeroes);
     return ret;
 }
 

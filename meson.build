@@ -37,6 +37,7 @@ libhydrium_sources = files(
     'src/libhydrium/encoder.c',
     'src/libhydrium/entropy.c',
     'src/libhydrium/libhydrium.c',
+    'src/libhydrium/memory.c',
     'src/libhydrium/xyb.c',
 )
 

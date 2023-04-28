@@ -8,12 +8,21 @@
 #include <string.h>
 
 #include "internal.h"
+#include "memory.h"
 
-static void *hyd_alloc(size_t size, void *opaque) {
+static void *malloc_default(size_t size, void *opaque) {
     return malloc(size);
 }
 
-static void hyd_free(void *ptr, void *opaque) {
+static void *calloc_default(size_t nmemb, size_t size, void *opaque) {
+    return calloc(nmemb, size);
+}
+
+static void *realloc_default(void *ptr, size_t size, void *opaque) {
+    return realloc(ptr, size);
+}
+
+static void free_default(void *ptr, void *opaque) {
     free(ptr);
 }
 
@@ -21,30 +30,30 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
     HYDEncoder *ret;
 
     if (allocator)
-        ret = allocator->alloc_func(sizeof(HYDEncoder), allocator->opaque);
+        ret = allocator->calloc_func(1, sizeof(HYDEncoder), allocator->opaque);
     else
-        ret = hyd_alloc(sizeof(HYDEncoder), NULL);
+        ret = calloc(1, sizeof(HYDEncoder));
 
     if (!ret)
         return NULL;
-
-    memset(ret, 0, sizeof(HYDEncoder));
 
     if (allocator) {
         ret->allocator = *allocator;
     } else {
         ret->allocator.opaque = NULL;
-        ret->allocator.alloc_func = &hyd_alloc;
-        ret->allocator.free_func = &hyd_free;
+        ret->allocator.malloc_func = &malloc_default;
+        ret->allocator.calloc_func = &calloc_default;
+        ret->allocator.realloc_func = &realloc_default;
+        ret->allocator.free_func = &free_default;
     }
 
     return ret;
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
-    HYD_FREE(encoder, encoder->working_writer.buffer);
-    HYD_FREE(encoder, encoder->xyb)
-    HYD_FREE(encoder, encoder);
+    hyd_free(&encoder->allocator, encoder->working_writer.buffer);
+    hyd_free(&encoder->allocator, encoder->xyb);
+    hyd_free(&encoder->allocator, encoder);
     return HYD_OK;
 }
 

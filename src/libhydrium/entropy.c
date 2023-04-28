@@ -7,6 +7,7 @@
 #include "entropy.h"
 #include "internal.h"
 #include "math-functions.h"
+#include "memory.h"
 
 typedef struct StateFlush {
     size_t token_index;
@@ -64,17 +65,17 @@ static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
 }
 
 void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
-    HYD_FREEA(stream->allocator, stream->frequencies);
-    HYD_FREEA(stream->allocator, stream->cluster_map);
-    HYD_FREEA(stream->allocator, stream->symbols);
-    HYD_FREEA(stream->allocator, stream->configs);
-    HYD_FREEA(stream->allocator, stream->alphabet_sizes);
+    hyd_free(stream->allocator, stream->frequencies);
+    hyd_free(stream->allocator, stream->cluster_map);
+    hyd_free(stream->allocator, stream->symbols);
+    hyd_free(stream->allocator, stream->configs);
+    hyd_free(stream->allocator, stream->alphabet_sizes);
     if (stream->alias_table) {
         for (size_t i = 0; i < stream->max_alphabet_size * stream->num_clusters; i++)
-            HYD_FREEA(stream->allocator, stream->alias_table[i].cutoffs);
+            hyd_free(stream->allocator, stream->alias_table[i].cutoffs);
     }
-    HYD_FREEA(stream->allocator, stream->alias_table);
-    HYD_FREEA(stream->allocator, stream->vlc_table);
+    hyd_free(stream->allocator, stream->alias_table);
+    hyd_free(stream->allocator, stream->vlc_table);
 }
 
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
@@ -224,7 +225,7 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     }
 
     for (uint16_t sym = 0; sym < stream->max_alphabet_size; sym++) {
-        alias_table[sym].cutoffs = HYD_ALLOCA(stream->allocator, 3 * (alias_table[sym].count + 1) * sizeof(int16_t));
+        alias_table[sym].cutoffs = hyd_malloc(stream->allocator, 3 * (alias_table[sym].count + 1) * sizeof(int16_t));
         if (!alias_table[sym].cutoffs)
             return HYD_NOMEM;
         memset(alias_table[sym].cutoffs, -1, 3 * (alias_table[sym].count + 1) * sizeof(int16_t));
@@ -336,8 +337,8 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
     stream->allocator = allocator;
     stream->bw = bw;
     stream->init_symbol_count = symbol_count;
-    stream->cluster_map = HYD_ALLOCA(allocator, num_dists);
-    stream->symbols = HYD_ALLOCA(allocator, symbol_count * sizeof(HYDHybridSymbol));
+    stream->cluster_map = hyd_malloc(allocator, num_dists);
+    stream->symbols = hyd_malloc(allocator, symbol_count * sizeof(HYDHybridSymbol));
     if (!stream->cluster_map || !stream->symbols) {
         ret = HYD_NOMEM;
         goto fail;
@@ -355,13 +356,12 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
     if (lz77_min_symbol)
         stream->cluster_map[num_dists - 1] = stream->num_clusters++;
 
-    stream->configs = HYD_ALLOCA(allocator, stream->num_clusters * sizeof(HYDHybridUintConfig));
-    stream->alphabet_sizes = HYD_ALLOCA(allocator, stream->num_clusters * sizeof(uint16_t));
+    stream->configs = hyd_malloc(allocator, stream->num_clusters * sizeof(HYDHybridUintConfig));
+    stream->alphabet_sizes = hyd_calloc(allocator, stream->num_clusters, sizeof(uint16_t));
     if (!stream->configs || !stream->alphabet_sizes) {
         ret = HYD_NOMEM;
         goto fail;
     }
-    memset(stream->alphabet_sizes, 0, stream->num_clusters * sizeof(uint16_t));
 
     if (!custom_configs) {
         hyd_entropy_set_hybrid_config(stream, 0, stream->num_clusters - !!stream->lz77_min_symbol, 4, 1, 1);
@@ -494,10 +494,9 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
     size_t table_size = stream->num_clusters * stream->max_alphabet_size;
 
     /* populate frequencies */
-    stream->frequencies = HYD_ALLOCA(stream->allocator, table_size * sizeof(uint16_t));
+    stream->frequencies = hyd_calloc(stream->allocator, table_size, sizeof(uint16_t));
     if (!stream->frequencies)
         return HYD_NOMEM;
-    memset(stream->frequencies, 0, table_size * sizeof(uint16_t));
     for (size_t pos = 0; pos < stream->symbol_pos; pos++)
         stream->frequencies[stream->symbols[pos].cluster * stream->max_alphabet_size + stream->symbols[pos].token]++;
 
@@ -533,7 +532,7 @@ static int32_t collect(FrequencyEntry *entry) {
 static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t *frequencies,
                                         uint16_t *lengths, uint32_t alphabet_size, int32_t max_depth) {
     HYDStatusCode ret = HYD_OK;
-    FrequencyEntry *tree = HYD_ALLOCA(allocator, (2 * alphabet_size - 1) * sizeof(FrequencyEntry));
+    FrequencyEntry *tree = hyd_calloc(allocator, (2 * alphabet_size - 1), sizeof(FrequencyEntry));
     if (!tree) {
         ret = HYD_NOMEM;
         goto end;
@@ -543,9 +542,8 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t 
         tree[token].frequency = frequencies[token];
         tree[token].token = 1 + token;
         tree[token].left_child = tree[token].right_child = NULL;
-        tree[token].depth = 0;
-        tree[token].max_depth = 0;
     }
+
     if (max_depth < 0)
         max_depth = hyd_cllog2(alphabet_size);
 
@@ -590,14 +588,14 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t 
     }
 
 end:
-    HYD_FREEA(allocator, tree);
+    hyd_free(allocator, tree);
     return ret;
 }
 
 static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *table,
                                         const uint16_t *lengths, uint32_t alphabet_size) {
     HYDStatusCode ret = HYD_OK;
-    HYDVLCElement *pre_table = HYD_ALLOCA(allocator, alphabet_size * sizeof(HYDVLCElement));
+    HYDVLCElement *pre_table = hyd_malloc(allocator, alphabet_size * sizeof(HYDVLCElement));
     if (!pre_table)
         return HYD_NOMEM;
 
@@ -621,7 +619,7 @@ static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *
     if (code && code != (UINT64_C(1) << 32))
         ret = HYD_INTERNAL_ERROR;
 
-    HYD_FREEA(allocator, pre_table);
+    hyd_free(allocator, pre_table);
     return ret;
 }
 
@@ -697,12 +695,11 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
         goto end;
     }
 
-    level1_table = HYD_ALLOCA(stream->allocator, 18 * sizeof(HYDVLCElement));
+    level1_table = hyd_calloc(stream->allocator, 18, sizeof(HYDVLCElement));
     if (!level1_table) {
         ret = HYD_NOMEM;
         goto end;
     }
-    memset(level1_table, 0, 18 * sizeof(HYDVLCElement));
 
     ret = build_prefix_table(stream->allocator, level1_table, level1_lengths, 18);
     if (ret < HYD_ERROR_START)
@@ -726,7 +723,7 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
     flush_zeroes(bw, level1_table, num_zeroes);
 
 end:
-    HYD_FREEA(stream->allocator, level1_table);
+    hyd_free(stream->allocator, level1_table);
     return ret;
 }
 
@@ -752,14 +749,12 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
 
     size_t table_size = stream->num_clusters * stream->max_alphabet_size;
 
-    global_lengths = HYD_ALLOCA(stream->allocator, table_size * sizeof(uint16_t));
-    stream->vlc_table = HYD_ALLOCA(stream->allocator, table_size * sizeof(HYDVLCElement));
+    global_lengths = hyd_calloc(stream->allocator, table_size, sizeof(uint16_t));
+    stream->vlc_table = hyd_calloc(stream->allocator, table_size, sizeof(HYDVLCElement));
     if (!global_lengths || !stream->vlc_table) {
         ret = HYD_NOMEM;
         goto fail;
     }
-    memset(global_lengths, 0, table_size * sizeof(uint16_t));
-    memset(stream->vlc_table, 0, table_size * sizeof(HYDVLCElement));
 
     for (size_t i = 0; i < stream->num_clusters; i++) {
         if (stream->alphabet_sizes[i] <= 1)
@@ -811,11 +806,11 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
             goto fail;
     }
 
-    HYD_FREEA(stream->allocator, global_lengths);
+    hyd_free(stream->allocator, global_lengths);
     return bw->overflow_state;
 
 fail:
-    HYD_FREEA(stream->allocator, global_lengths);
+    hyd_free(stream->allocator, global_lengths);
     hyd_entropy_stream_destroy(stream);
     return ret;
 }
@@ -832,12 +827,11 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
     size_t table_size = stream->num_clusters * stream->max_alphabet_size;
 
     /* generate alias mappings */
-    stream->alias_table = HYD_ALLOCA(stream->allocator, table_size * sizeof(HYDAliasEntry));
+    stream->alias_table = hyd_calloc(stream->allocator, table_size, sizeof(HYDAliasEntry));
     if (!stream->alias_table) {
         ret = HYD_NOMEM;
         goto fail;
     }
-    memset(stream->alias_table, 0, table_size * sizeof(HYDAliasEntry));
     for (size_t i = 0; i < stream->num_clusters; i++) {
         int16_t uniq_pos = write_ans_frequencies(stream, stream->frequencies + i * stream->max_alphabet_size);
         if (uniq_pos < HYD_ERROR_START) {
@@ -885,15 +879,15 @@ end:
     return ret;
 }
 
-static HYDStatusCode append_state_flush(const HYDAllocator *allocator, StateFlushChain **flushes,
+static HYDStatusCode append_state_flush(HYDAllocator *allocator, StateFlushChain **flushes,
                                         size_t token_index, uint16_t value) {
     if ((*flushes)->pos == (*flushes)->capacity) {
-        StateFlushChain *chain = HYD_ALLOCA(allocator, sizeof(StateFlushChain));
+        StateFlushChain *chain = hyd_malloc(allocator, sizeof(StateFlushChain));
         if (!chain)
             return HYD_NOMEM;
-        chain->state_flushes = HYD_ALLOCA(allocator, sizeof(StateFlush) << 10);
+        chain->state_flushes = hyd_malloc(allocator, sizeof(StateFlush) << 10);
         if (!chain->state_flushes){
-            HYD_FREEA(allocator, chain);
+            hyd_free(allocator, chain);
             return HYD_NOMEM;
         }
         chain->capacity = 1 << 10;
@@ -906,14 +900,14 @@ static HYDStatusCode append_state_flush(const HYDAllocator *allocator, StateFlus
     return HYD_OK;
 }
 
-static StateFlush *pop_state_flush(const HYDAllocator *allocator, StateFlushChain **flushes) {
+static StateFlush *pop_state_flush(HYDAllocator *allocator, StateFlushChain **flushes) {
     if ((*flushes)->pos > 0)
         return &(*flushes)->state_flushes[--(*flushes)->pos];
     StateFlushChain *prev_chain = (*flushes)->prev_chain;
     if (!prev_chain)
         return NULL;
-    HYD_FREEA(allocator, (*flushes)->state_flushes);
-    HYD_FREEA(allocator, *flushes);
+    hyd_free(allocator, (*flushes)->state_flushes);
+    hyd_free(allocator, *flushes);
     *flushes = prev_chain;
     return pop_state_flush(allocator, flushes);
 }
@@ -937,7 +931,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         goto end;
     }
 
-    flushes->state_flushes = HYD_ALLOCA(stream->allocator, sizeof(StateFlush) << 10);
+    flushes->state_flushes = hyd_malloc(stream->allocator, sizeof(StateFlush) << 10);
     if (!flushes->state_flushes) {
         ret = HYD_NOMEM;
         goto end;
@@ -992,11 +986,11 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
 end:
     while (flushes->prev_chain) {
         StateFlushChain *prev = flushes->prev_chain;
-        HYD_FREEA(stream->allocator, flushes->state_flushes);
-        HYD_FREEA(stream->allocator, flushes);
+        hyd_free(stream->allocator, flushes->state_flushes);
+        hyd_free(stream->allocator, flushes);
         flushes = prev;
     }
-    HYD_FREEA(stream->allocator, flushes->state_flushes);
+    hyd_free(stream->allocator, flushes->state_flushes);
     return ret;
 }
 

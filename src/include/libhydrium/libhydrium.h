@@ -70,9 +70,17 @@ typedef enum HYDStatusCode {
 
 typedef struct HYDAllocator {
     void *opaque;
-    void *(*alloc_func)(size_t size, void *opaque);
+    void *(*malloc_func)(size_t size, void *opaque);
+    void *(*calloc_func)(size_t nmemb, size_t size, void *opaque);
+    void *(*realloc_func)(void *ptr, size_t size, void *opaque);
     void (*free_func)(void *ptr, void *opaque);
 } HYDAllocator;
+
+typedef struct HYDMemoryProfiler {
+    size_t total_alloced;
+    size_t current_alloced;
+    size_t max_alloced;
+} HYDMemoryProfiler;
 
 typedef struct HYDImageMetadata {
     /**
@@ -247,5 +255,8 @@ HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size
  * @return HYD_OK upon success, a negative status code upon failure.
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder);
+
+HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *profiler);
+HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator);
 
 #endif /* HYDRIUM_H_ */
