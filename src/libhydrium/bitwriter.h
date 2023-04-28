@@ -15,6 +15,8 @@ typedef struct HYDBitWriter {
     uint8_t overflow[32];
     size_t overflow_pos;
     int overflow_state;
+    HYDAllocator *allocator;
+    HYDStatusCode (*realloc_func)(HYDAllocator *allocator, uint8_t **buffer, size_t *buffer_len);
 } HYDBitWriter;
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len, uint64_t cache, int cache_bits);

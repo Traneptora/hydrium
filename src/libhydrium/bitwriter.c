@@ -19,6 +19,8 @@ HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buff
     bw->overflow_state = HYD_OK;
     memset(bw->overflow, 0, sizeof(bw->overflow));
     bw->overflow_pos = 0;
+    bw->realloc_func = NULL;
+    bw->allocator = NULL;
     return HYD_OK;
 }
 
@@ -45,8 +47,18 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
         return bw->overflow_state;
     }
     hyd_bitwriter_flush0(bw);
-    if (bw->overflow_pos > 0)
-        bw->overflow_state = HYD_NEED_MORE_OUTPUT;
+    if (bw->overflow_pos > 0) {
+        if (bw->realloc_func) {
+            bw->overflow_state = bw->realloc_func(bw->allocator, &bw->buffer, &bw->buffer_len);
+            if (bw->overflow_state < HYD_ERROR_START)
+                return bw->overflow_state;
+            memcpy(bw->buffer + bw->buffer_pos, bw->overflow, bw->overflow_pos);
+            bw->buffer_pos += bw->overflow_pos;
+            bw->overflow_pos = 0;
+        } else {
+            bw->overflow_state = HYD_NEED_MORE_OUTPUT;
+        }
+    }
     return hyd_write(bw, value, bits);
 }
 

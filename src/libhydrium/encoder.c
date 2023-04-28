@@ -415,7 +415,7 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
     hyd_entropy_init_stream(stream, &encoder->allocator, &encoder->working_writer,
                         num_syms, map, 7425, 1, 0);
     hyd_entropy_set_hybrid_config(stream, 0, 0, 4, 1, 0);
-    size_t gindex =0;
+    size_t gindex = 0;
     for (size_t gy = 0; gy < encoder->tile_count_y; gy++) {
         if (gy << 8 >= encoder->lf_group_height)
             break;
@@ -475,17 +475,43 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
     return encoder->working_writer.overflow_state;
 }
 
+/* TODO: use realloc() instead of malloc() and memcpy() */
+static HYDStatusCode realloc_working_buffer(HYDAllocator *allocator, uint8_t **buffer, size_t *buffer_size) {
+    size_t new_size = *buffer_size << 1;
+    uint8_t *new_buffer = HYD_ALLOCA(allocator, new_size);
+    if (!new_buffer)
+        return HYD_NOMEM;
+
+    memcpy(new_buffer, *buffer, *buffer_size);
+    HYD_FREEA(allocator, *buffer);
+    *buffer = new_buffer;
+    *buffer_size = new_size;
+
+    return HYD_OK;
+}
+
 static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder) {
 
     size_t *section_endpos = NULL;
     uint8_t *non_zeroes = NULL;
     uint16_t *hf_mult = NULL;
     HYDEntropyStream hf_stream = { 0 };
-
-    HYDStatusCode ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_buffer,
-                                            sizeof(encoder->working_buffer), 0, 0);
+    HYDStatusCode ret = HYD_OK;
+    if (!encoder->working_writer.buffer) {
+        encoder->working_writer.buffer = HYD_ALLOC(encoder, 1 << 12);
+        if (!encoder->working_writer.buffer) {
+            ret = HYD_NOMEM;
+            goto end;
+        }
+        ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_writer.buffer, 1 << 12, 0, 0);
+    } else {
+        ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_writer.buffer,
+                                   encoder->working_writer.buffer_len, 0, 0);
+    }
     if (ret < HYD_ERROR_START)
         goto end;
+    encoder->working_writer.allocator = &encoder->allocator;
+    encoder->working_writer.realloc_func = &realloc_working_buffer;
     encoder->copy_pos = 0;
 
     forward_dct(encoder);

@@ -42,6 +42,7 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
+    HYD_FREE(encoder, encoder->working_writer.buffer);
     HYD_FREE(encoder, encoder->xyb)
     HYD_FREE(encoder, encoder);
     return HYD_OK;
@@ -94,7 +95,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
     size_t tocopy = encoder->writer.buffer_len - encoder->writer.buffer_pos;
     if (tocopy > encoder->working_writer.buffer_pos - encoder->copy_pos)
         tocopy = encoder->working_writer.buffer_pos - encoder->copy_pos;
-    memcpy(encoder->writer.buffer + encoder->writer.buffer_pos, encoder->working_buffer + encoder->copy_pos, tocopy);
+    memcpy(encoder->writer.buffer + encoder->writer.buffer_pos, encoder->working_writer.buffer + encoder->copy_pos, tocopy);
     encoder->writer.buffer_pos += tocopy;
     encoder->copy_pos += tocopy;
     if (encoder->copy_pos >= encoder->working_writer.buffer_pos)

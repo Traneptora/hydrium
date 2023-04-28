@@ -18,9 +18,8 @@ struct HYDEncoder {
     HYDAllocator allocator;
     HYDImageMetadata metadata;
 
-    /* 256x256 tile */
+    /* one LF group */
     int16_t *xyb;
-    uint8_t working_buffer[528288];
 
     uint8_t *out;
     size_t out_pos;
