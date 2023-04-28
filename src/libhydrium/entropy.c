@@ -76,6 +76,7 @@ void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
     }
     hyd_free(stream->allocator, stream->alias_table);
     hyd_free(stream->allocator, stream->vlc_table);
+    memset(stream, 0, sizeof(HYDEntropyStream));
 }
 
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
@@ -762,7 +763,7 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
         uint16_t *lengths = global_lengths + i * stream->max_alphabet_size;
         const uint16_t *freqs = stream->frequencies + i * stream->max_alphabet_size;
         if ((ret = build_huffman_tree(stream->allocator, freqs, lengths, stream->alphabet_sizes[i], 15)) < HYD_ERROR_START)
-            return ret;
+            goto fail;
         uint32_t nsym = 0;
         HYDVLCElement tokens[4] = { 0 };
         for (uint32_t j = 0; j < stream->alphabet_sizes[i]; j++) {
