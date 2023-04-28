@@ -103,8 +103,8 @@ int main(int argc, const char *argv[]) {
     metadata.width = width;
     metadata.height = height;
     metadata.linear_light = 0;
-    metadata.tile_size_shift_x = 3;
-    metadata.tile_size_shift_y = 3;
+    metadata.tile_size_shift_x = 0;
+    metadata.tile_size_shift_y = 0;
     const uint32_t tile_size_x = 256 << metadata.tile_size_shift_x;
     const uint32_t tile_size_y = 256 << metadata.tile_size_shift_y;
     const uint32_t tile_width = (width + tile_size_x - 1) >> (8 + metadata.tile_size_shift_x);
