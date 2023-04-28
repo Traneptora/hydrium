@@ -63,8 +63,7 @@ static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
     return hyd_write(bw, b, l);
 }
 
-static void destroy_stream(HYDEntropyStream *stream, void *extra) {
-    HYD_FREEA(stream->allocator, extra);
+void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
     HYD_FREEA(stream->allocator, stream->frequencies);
     HYD_FREEA(stream->allocator, stream->cluster_map);
     HYD_FREEA(stream->allocator, stream->symbols);
@@ -78,16 +77,12 @@ static void destroy_stream(HYDEntropyStream *stream, void *extra) {
     HYD_FREEA(stream->allocator, stream->vlc_table);
 }
 
-void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
-    destroy_stream(stream, NULL);
-}
-
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
-                                         int split_exponent, int msb_in_token, int lsb_in_token) {
-    if (min_cluster >= to_cluster)
+                                            int split_exponent, int msb_in_token, int lsb_in_token) {
+    if (to_cluster && min_cluster >= to_cluster)
         return HYD_INTERNAL_ERROR;
 
-    for (uint8_t j = min_cluster; j < to_cluster && j < stream->num_clusters; j++) {
+    for (uint8_t j = min_cluster; (!to_cluster || j < to_cluster) && j < stream->num_clusters; j++) {
         stream->configs[j].split_exponent = split_exponent;
         stream->configs[j].msb_in_token = msb_in_token;
         stream->configs[j].lsb_in_token = lsb_in_token;
@@ -123,7 +118,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
         1, 1, 64);
     if (ret < HYD_ERROR_START)
         goto fail;
-    if ((ret = hyd_entropy_set_hybrid_config(&nested, 0, 2, 4, 1, 0)) < HYD_ERROR_START)
+    if ((ret = hyd_entropy_set_hybrid_config(&nested, 0, 0, 4, 1, 0)) < HYD_ERROR_START)
         goto fail;
     uint8_t mtf[256];
     for (int i = 0; i < 256; i++)
@@ -144,15 +139,14 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
             mtf[0] = value;
         }
     }
-    if ((ret = hyd_prefix_write_stream_header(&nested)) < HYD_ERROR_START)
-        goto fail;
+
     if ((ret = hyd_prefix_finalize_stream(&nested)) < HYD_ERROR_START)
         goto fail;
 
     return bw->overflow_state;
 
 fail:
-    destroy_stream(&nested, NULL);
+    hyd_entropy_stream_destroy(&nested);
     return ret;
 }
 
@@ -377,7 +371,7 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
 
     return HYD_OK;
 fail:
-    destroy_stream(stream, NULL);
+    hyd_entropy_stream_destroy(stream);
     return ret;
 }
 
@@ -821,7 +815,8 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
     return bw->overflow_state;
 
 fail:
-    destroy_stream(stream, global_lengths);
+    HYD_FREEA(stream->allocator, global_lengths);
+    hyd_entropy_stream_destroy(stream);
     return ret;
 }
 
@@ -853,10 +848,11 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
         if (ret < HYD_ERROR_START)
             goto fail;
     }
+
     return bw->overflow_state;
 
 fail:
-    destroy_stream(stream, NULL);
+    hyd_entropy_stream_destroy(stream);
     return ret;
 }
 
@@ -879,8 +875,13 @@ HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, size_t s
 }
 
 HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream) {
-    HYDStatusCode ret = hyd_prefix_write_stream_symbols(stream, 0, stream->symbol_pos);
-    destroy_stream(stream, NULL);
+    HYDStatusCode ret = hyd_prefix_write_stream_header(stream);
+    if (ret < HYD_ERROR_START)
+        goto end;
+    ret = hyd_prefix_write_stream_symbols(stream, 0, stream->symbol_pos);
+
+end:
+    hyd_entropy_stream_destroy(stream);
     return ret;
 }
 
@@ -996,5 +997,16 @@ end:
         flushes = prev;
     }
     HYD_FREEA(stream->allocator, flushes->state_flushes);
+    return ret;
+}
+
+HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream) {
+    HYDStatusCode ret = hyd_ans_write_stream_header(stream);
+    if (ret < HYD_ERROR_START)
+        goto end;
+    ret = hyd_ans_write_stream_symbols(stream, 0, stream->symbol_pos);
+
+end:
+    hyd_entropy_stream_destroy(stream);
     return ret;
 }

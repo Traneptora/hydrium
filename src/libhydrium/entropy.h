@@ -67,10 +67,21 @@ HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uin
 
 HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream);
 HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count);
+
+/**
+ * @brief write_stream_header, write_stream_symbols, and entropy_stream_destroy in one function
+ * @return HYDStatusCode HYD_OK upon success, negative upon error.
+ */
 HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream);
 
 HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream);
 HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_offset, size_t symbol_count);
+
+/**
+ * @brief write_stream_header, write_stream_symbols, and entropy_stream_destroy in one function
+ * @return HYDStatusCode HYD_OK upon success, negative upon error.
+ */
+HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream);
 
 void hyd_entropy_stream_destroy(HYDEntropyStream *stream);
 

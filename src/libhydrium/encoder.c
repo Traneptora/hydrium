@@ -275,15 +275,13 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
     hyd_entropy_send_symbol(&stream, 4, 0);
     // mul_bits = 0
     hyd_entropy_send_symbol(&stream, 5, 0);
-    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
-        return ret;
     if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
     size_t nb_blocks = encoder->lf_varblock_width * encoder->lf_varblock_height;
     ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, (const uint8_t[1]){0}, 1, 1, 0);
     if (ret < HYD_ERROR_START)
         return ret;
-    hyd_entropy_set_hybrid_config(&stream, 0, 1, 7, 1, 0);
+    hyd_entropy_set_hybrid_config(&stream, 0, 0, 7, 1, 0);
     const int shift[3] = {3, 0, -1};
     for (int i = 0; i < 3; i++) {
         int c = i < 2 ? 1 - i : i;
@@ -306,8 +304,6 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
             }
         }
     }
-    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
-        return ret;
     if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
     hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
@@ -320,8 +316,6 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
     hyd_entropy_send_symbol(&stream, 3, 0);
     hyd_entropy_send_symbol(&stream, 4, 0);
     hyd_entropy_send_symbol(&stream, 5, 0);
-    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
-        return ret;
     if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
     size_t cfl_width = (encoder->lf_varblock_width + 7) >> 3;
@@ -335,8 +329,6 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, const uint16_t *hf_mult
         hyd_entropy_send_symbol(&stream, 0, (hf_mult[i] - 1) * 2);
     for (size_t i = 0; i < nb_blocks; i++)
         hyd_entropy_send_symbol(&stream, 0, 0);
-    if ((ret = hyd_prefix_write_stream_header(&stream)) < HYD_ERROR_START)
-        return ret;
     if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
 
@@ -422,7 +414,7 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
     const size_t num_syms = 3 * encoder->lf_varblock_width * encoder->lf_varblock_height + num_non_zeroes;
     hyd_entropy_init_stream(stream, &encoder->allocator, &encoder->working_writer,
                         num_syms, map, 7425, 1, 0);
-    hyd_entropy_set_hybrid_config(stream, 0, 46, 4, 1, 0);
+    hyd_entropy_set_hybrid_config(stream, 0, 0, 4, 1, 0);
     size_t gindex =0;
     for (size_t gy = 0; gy < encoder->tile_count_y; gy++) {
         if (gy << 8 >= encoder->lf_group_height)
@@ -446,8 +438,10 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                         size_t block_context = hf_block_cluster_map[13 * i];
                         size_t non_zero_context = get_non_zero_context(predicted, block_context);
                         uint32_t non_zero_count = non_zeroes[(by * gbw + bx) * 3 + c];
-                        hyd_entropy_send_symbol(stream, non_zero_context, non_zero_count);
+                        ret = hyd_entropy_send_symbol(stream, non_zero_context, non_zero_count);
                         symbol_count[gindex]++;
+                        if (ret < HYD_ERROR_START)
+                            return ret;
                         if (!non_zero_count)
                             continue;
                         size_t hist_context = 458 * block_context + 555;
