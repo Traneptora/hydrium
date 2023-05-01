@@ -9,6 +9,7 @@
 #include "math-functions.h"
 #include "memory.h"
 
+// State Flush. Monsieur Bond Wins.
 typedef struct StateFlush {
     size_t token_index;
     uint16_t value;
@@ -371,6 +372,7 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
     }
 
     return HYD_OK;
+
 fail:
     hyd_entropy_stream_destroy(stream);
     return ret;
@@ -552,10 +554,10 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint16_t 
     for (uint32_t k = 0; k < alphabet_size - 1; k++) {
         FrequencyEntry *smallest = NULL;
         FrequencyEntry *second = NULL;
-        int32_t nz = -1;
+        int32_t nz = 0;
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++)
             nz += !!tree[j].frequency;
-        int32_t target = max_depth - hyd_cllog2(nz);
+        int32_t target = max_depth - (nz > 1 ? hyd_cllog2(nz - 1) : 0);
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
             if (tree[j].max_depth >= target)
                 continue;
@@ -762,7 +764,8 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
             continue;
         uint16_t *lengths = global_lengths + i * stream->max_alphabet_size;
         const uint16_t *freqs = stream->frequencies + i * stream->max_alphabet_size;
-        if ((ret = build_huffman_tree(stream->allocator, freqs, lengths, stream->alphabet_sizes[i], 15)) < HYD_ERROR_START)
+        ret = build_huffman_tree(stream->allocator, freqs, lengths, stream->alphabet_sizes[i], 15);
+        if (ret < HYD_ERROR_START)
             goto fail;
         uint32_t nsym = 0;
         HYDVLCElement tokens[4] = { 0 };

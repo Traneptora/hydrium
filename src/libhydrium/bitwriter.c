@@ -35,7 +35,6 @@ static void hyd_bitwriter_flush0(HYDBitWriter *bw) {
     }
 }
 
-
 HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
     if (bits <= 0)
         return bw->overflow_state;
@@ -47,7 +46,7 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
         return bw->overflow_state;
     }
     hyd_bitwriter_flush0(bw);
-    if (bw->overflow_pos > 0) {
+    if (bw->overflow_pos) {
         if (bw->realloc_func) {
             bw->overflow_state = bw->realloc_func(bw->allocator, &bw->buffer, &bw->buffer_len);
             if (bw->overflow_state < HYD_ERROR_START)

@@ -33,7 +33,6 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
         ret = allocator->calloc_func(1, sizeof(HYDEncoder), allocator->opaque);
     else
         ret = calloc(1, sizeof(HYDEncoder));
-
     if (!ret)
         return NULL;
 
@@ -75,9 +74,9 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
         return HYD_API_ERROR;
     if (metadata->tile_size_shift_y < 0 || metadata->tile_size_shift_y > 3)
         return HYD_API_ERROR;
-
     encoder->tile_count_x = 1 << metadata->tile_size_shift_x;
     encoder->tile_count_y = 1 << metadata->tile_size_shift_y;
+
     return HYD_OK;
 }
 
@@ -104,7 +103,8 @@ HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
     size_t tocopy = encoder->writer.buffer_len - encoder->writer.buffer_pos;
     if (tocopy > encoder->working_writer.buffer_pos - encoder->copy_pos)
         tocopy = encoder->working_writer.buffer_pos - encoder->copy_pos;
-    memcpy(encoder->writer.buffer + encoder->writer.buffer_pos, encoder->working_writer.buffer + encoder->copy_pos, tocopy);
+    memcpy(encoder->writer.buffer + encoder->writer.buffer_pos,
+        encoder->working_writer.buffer + encoder->copy_pos, tocopy);
     encoder->writer.buffer_pos += tocopy;
     encoder->copy_pos += tocopy;
     if (encoder->copy_pos >= encoder->working_writer.buffer_pos)
