@@ -256,6 +256,8 @@ HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder);
 
+HYDRIUM_EXPORT HYDStatusCode hyd_encode_end(HYDEncoder *encoder);
+
 HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *profiler);
 HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator);
 

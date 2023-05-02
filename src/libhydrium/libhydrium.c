@@ -52,6 +52,7 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     hyd_free(&encoder->allocator, encoder->working_writer.buffer);
     hyd_free(&encoder->allocator, encoder->xyb);
+    hyd_free(&encoder->allocator, encoder->lf_group);
     hyd_free(&encoder->allocator, encoder);
     return HYD_OK;
 }
@@ -70,12 +71,34 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     if (width64 > (1 << 20) || height64 > (1 << 20) || width64 * height64 > (1 << 28))
         encoder->level10 = 1;
 
-    if (metadata->tile_size_shift_x < 0 || metadata->tile_size_shift_x > 3)
+    if (metadata->tile_size_shift_x < -1 || metadata->tile_size_shift_x > 3)
         return HYD_API_ERROR;
-    if (metadata->tile_size_shift_y < 0 || metadata->tile_size_shift_y > 3)
+    if (metadata->tile_size_shift_y < -1 || metadata->tile_size_shift_y > 3)
         return HYD_API_ERROR;
-    encoder->tile_count_x = 1 << metadata->tile_size_shift_x;
-    encoder->tile_count_y = 1 << metadata->tile_size_shift_y;
+
+    encoder->one_frame = metadata->tile_size_shift_x == -1 || metadata->tile_size_shift_y == -1;
+    encoder->lf_group_count_x = (metadata->width + 2047) >> 11;
+    encoder->lf_group_count_y = (metadata->height + 2047) >> 11;
+    encoder->lf_groups_per_frame = encoder->one_frame ? encoder->lf_group_count_x * encoder->lf_group_count_y : 1;
+    encoder->lf_group = hyd_recalloc(&encoder->allocator, encoder->lf_group, encoder->lf_groups_per_frame, sizeof(HYDLFGroup));
+    if (!encoder->lf_group)
+        return HYD_NOMEM;
+
+    if (encoder->one_frame) {
+        for (size_t y = 0; y < encoder->lf_group_count_y; y++) {
+            const size_t row = y * encoder->lf_group_count_x;
+            for (size_t x = 0; x < encoder->lf_group_count_x; x++) {
+                HYDLFGroup *lf_group = &encoder->lf_group[row + x];
+                lf_group->tile_count_x = 8;
+                lf_group->tile_count_y = 8;
+                lf_group->lf_group_x = x;
+                lf_group->lf_group_y = y;
+            }
+        }
+    } else {
+        encoder->lf_group->tile_count_x = 1 << metadata->tile_size_shift_x;
+        encoder->lf_group->tile_count_y = 1 << metadata->tile_size_shift_y;
+    }
 
     return HYD_OK;
 }

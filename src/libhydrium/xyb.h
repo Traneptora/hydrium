@@ -7,8 +7,8 @@
 #include "libhydrium/libhydrium.h"
 
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *const buffer[3],
-                                      ptrdiff_t row_stride, ptrdiff_t pixel_stride);
+                                      ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id);
 HYDStatusCode hyd_populate_xyb_buffer8(HYDEncoder *encoder, const uint8_t *const buffer[3], ptrdiff_t row_stride,
-                                       ptrdiff_t pixel_stride);
+                                       ptrdiff_t pixel_stride, size_t lf_group_id);
 
 #endif /* HYDRIUM_XYB_H_ */

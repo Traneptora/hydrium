@@ -75,12 +75,14 @@ int main(int argc, const char *argv[]) {
     metadata.width = width;
     metadata.height = height;
     metadata.linear_light = 0;
-    metadata.tile_size_shift_x = 0;
-    metadata.tile_size_shift_y = 0;
-    const uint32_t tile_size_x = 256 << metadata.tile_size_shift_x;
-    const uint32_t tile_size_y = 256 << metadata.tile_size_shift_y;
-    const uint32_t tile_width = (width + tile_size_x - 1) >> (8 + metadata.tile_size_shift_x);
-    const uint32_t tile_height = (height + tile_size_y - 1) >> (8 + metadata.tile_size_shift_y);
+    metadata.tile_size_shift_x = -1;
+    metadata.tile_size_shift_y = -1;
+    const uint32_t size_shift_x = metadata.tile_size_shift_x < 0 ? 3 : metadata.tile_size_shift_x;
+    const uint32_t size_shift_y = metadata.tile_size_shift_y < 0 ? 3 : metadata.tile_size_shift_y;
+    const uint32_t tile_size_x = 256 << size_shift_x;
+    const uint32_t tile_size_y = 256 << size_shift_y;
+    const uint32_t tile_width = (width + tile_size_x - 1) >> (8 + size_shift_x);
+    const uint32_t tile_height = (height + tile_size_y - 1) >> (8 + size_shift_y);
 
     if (ihdr.interlace_method != SPNG_INTERLACE_NONE)
         buffer = malloc(decoded_png_size);
@@ -128,10 +130,12 @@ int main(int argc, const char *argv[]) {
         }
     }
 
+
     if ((ret = hyd_set_metadata(encoder, &metadata)) < HYD_ERROR_START)
         goto done;
 
     hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+
     struct spng_row_info row_info = {0};
     for (uint32_t y = 0; y < tile_height; y++) {
         if (ihdr.interlace_method == SPNG_INTERLACE_NONE) {
@@ -152,27 +156,40 @@ int main(int argc, const char *argv[]) {
             if (ihdr.bit_depth > 8) {
                 const uint16_t *tile_buffer = ((const uint16_t *)buffer) + x * tile_size_x * 4;
                 const uint16_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
-                ret = hyd_send_tile(encoder, rgb, x, y, width * 4, 4);
+                ret = hyd_send_tile(encoder, rgb, x, y, spng_stride, 4);
             } else {
                 const uint8_t *tile_buffer = ((const uint8_t *)buffer) + x * tile_size_x * 3;
                 const uint8_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
-                ret = hyd_send_tile8(encoder, rgb, x, y, width * 3, 3);
+                ret = hyd_send_tile8(encoder, rgb, x, y, spng_stride, 3);
             }
             if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
                 goto done;
-            do {
-                size_t written;
-                hyd_release_output_buffer(encoder, &written);
-                fwrite(output_buffer, written, 1, fp);
-                hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
-                ret = hyd_flush(encoder);
-            } while (ret == HYD_NEED_MORE_OUTPUT);
+            if (metadata.tile_size_shift_x >= 0 && metadata.tile_size_shift_y >= 0) {
+                do {
+                    ret = hyd_flush(encoder);
+                    size_t written;
+                    hyd_release_output_buffer(encoder, &written);
+                    fwrite(output_buffer, written, 1, fp);
+                    hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+                } while (ret == HYD_NEED_MORE_OUTPUT);
+            }
             if (ret != HYD_OK)
                 goto done;
         }
     }
 
-    ret = 0;
+    if (metadata.tile_size_shift_x < 0 || metadata.tile_size_shift_y < 0) {
+        ret = hyd_encode_end(encoder);
+        if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
+            goto done;
+        do {
+            ret = hyd_flush(encoder);
+            size_t written;
+            hyd_release_output_buffer(encoder, &written);
+            fwrite(output_buffer, written, 1, fp);
+            hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+        } while (ret == HYD_NEED_MORE_OUTPUT);
+    }
 
 done:
     if (fp)

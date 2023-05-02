@@ -37,7 +37,7 @@ typedef struct HYDEntropyStream {
     size_t num_dists;
     uint8_t *cluster_map;
     size_t num_clusters;
-    size_t init_symbol_count;
+    size_t symbol_count;
     size_t symbol_pos;
     HYDHybridSymbol *symbols;
     uint16_t max_alphabet_size;

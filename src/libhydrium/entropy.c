@@ -338,9 +338,9 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
     stream->num_dists = num_dists;
     stream->allocator = allocator;
     stream->bw = bw;
-    stream->init_symbol_count = symbol_count;
+    stream->symbol_count = symbol_count;
     stream->cluster_map = hyd_malloc(allocator, num_dists);
-    stream->symbols = hyd_malloc(allocator, symbol_count * sizeof(HYDHybridSymbol));
+    stream->symbols = hyd_mallocarray(allocator, stream->symbol_count, sizeof(HYDHybridSymbol));
     if (!stream->cluster_map || !stream->symbols) {
         ret = HYD_NOMEM;
         goto fail;
@@ -398,8 +398,13 @@ static void hybridize(uint32_t symbol, HYDHybridSymbol *hybrid_symbol, const HYD
 }
 
 static HYDStatusCode send_hybridized_symbol(HYDEntropyStream *stream, const HYDHybridSymbol *symbol) {
-    if (stream->symbol_pos >= stream->init_symbol_count)
-        return HYD_INTERNAL_ERROR;
+    if (stream->symbol_pos >= stream->symbol_count) {
+        HYDHybridSymbol *symbols = hyd_reallocarray(stream->allocator, stream->symbols, stream->symbol_count << 1, sizeof(HYDHybridSymbol));
+        if (!symbols)
+            return HYD_NOMEM;
+        stream->symbols = symbols;
+        stream->symbol_count <<= 1;
+    }
     stream->symbols[stream->symbol_pos++] = *symbol;
     if (symbol->token >= stream->max_alphabet_size)
         stream->max_alphabet_size = 1 + symbol->token;

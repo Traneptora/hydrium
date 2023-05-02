@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "libhydrium/libhydrium.h"
 #include "memory.h"
@@ -24,6 +25,31 @@ void hyd_free(HYDAllocator *allocator, void *ptr) {
     if (!ptr)
         return;
     allocator->free_func(ptr, allocator->opaque);
+}
+
+void *hyd_recalloc(HYDAllocator *allocator, void *ptr, size_t nmemb, size_t size) {
+    size_t total_size = nmemb * size;
+    if (size && total_size / size != nmemb)
+        return NULL;
+    void *ret = hyd_realloc(allocator, ptr, total_size);
+    if (!ret)
+        return NULL;
+    memset(ret, 0, total_size);
+    return ret;
+}
+
+void *hyd_mallocarray(HYDAllocator *allocator, size_t nmemb, size_t size) {
+    size_t total_size = nmemb * size;
+    if (size && total_size / size != nmemb)
+        return NULL;
+    return hyd_malloc(allocator, total_size);
+}
+
+void *hyd_reallocarray(HYDAllocator *allocator, void *ptr, size_t nmemb, size_t size) {
+    size_t total_size = nmemb * size;
+    if (size && total_size / size != nmemb)
+        return NULL;
+    return hyd_realloc(allocator, ptr, total_size);
 }
 
 static void *profiling_malloc(size_t size, void *profilerv) {
@@ -60,6 +86,8 @@ static void *profiling_calloc(size_t nmemb, size_t size, void *profilerv) {
 }
 
 static void *profiling_realloc(void *ptr, size_t size, void *profilerv) {
+    if (!ptr)
+        return profiling_malloc(size, profilerv);
     HYDMemoryProfiler *profiler = profilerv;
     size += sizeof(size_t);
     void *og_ptr = ptr - sizeof(size_t);
