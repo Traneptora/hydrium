@@ -44,6 +44,7 @@ typedef struct HYDEntropyStream {
     uint16_t *alphabet_sizes;
     uint16_t *frequencies;
     HYDHybridUintConfig *configs;
+    int wrote_stream_header;
 
     // lz77 only
     uint32_t lz77_min_length;

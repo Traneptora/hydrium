@@ -244,43 +244,44 @@ static int16_t write_ans_frequencies(HYDEntropyStream *stream, uint16_t *frequen
     size_t total = 0;
     for (size_t k = 0; k < stream->max_alphabet_size; k++)
         total += frequencies[k];
+    if (!total)
+        total = 1;
     size_t new_total = 0;
-    int16_t first_pos = -1;
-    int16_t second_pos = -1;
     for (size_t k = 0; k < stream->max_alphabet_size; k++) {
         if (!frequencies[k])
-            continue;
+            frequencies[k] = 1;
         frequencies[k] = (((uint32_t)frequencies[k] << 12) / total) & 0xFFFF;
         if (!frequencies[k])
             frequencies[k] = 1;
         new_total += frequencies[k];
-        if (first_pos < 0)
-            first_pos = k;
-        else if (second_pos < 0)
-            second_pos = k;
     }
 
-    // empty cluster
-    if (first_pos < 0)
-        first_pos = 0;
+    size_t j = 0;
+    while (new_total > (1 << 12)) {
+        size_t diff = new_total - (1 << 12);
+        if (diff < frequencies[j]) {
+            frequencies[j] -= diff;
+            new_total -= diff;
+            break;
+        }
+        new_total -= frequencies[j] - 1;
+        frequencies[j++] = 1;
+    }
 
-    frequencies[first_pos] += (1 << 12) - new_total;
-    if (frequencies[first_pos] == 1 << 12) {
+    frequencies[0] += (1 << 12) - new_total;
+    if (frequencies[0] == 1 << 12) {
         // simple dist
         hyd_write(bw, 0x1, 2);
-        write_ans_u8(bw, first_pos);
-        return first_pos;
+        write_ans_u8(bw, 0);
+        return 0;
     }
 
-    if (second_pos < 0)
-        return HYD_INTERNAL_ERROR;
-
-    if (frequencies[first_pos] + frequencies[second_pos] == 1 << 12) {
+    if (frequencies[0] + frequencies[1] == 1 << 12) {
         // simple dual peak dist
         hyd_write(bw, 0x3, 2);
-        write_ans_u8(bw, first_pos);
-        write_ans_u8(bw, second_pos);
-        hyd_write(bw, frequencies[first_pos], 12);
+        write_ans_u8(bw, 0);
+        write_ans_u8(bw, 1);
+        hyd_write(bw, frequencies[0], 12);
         return HYD_DEFAULT;
     }
     // simple dist and flat dist = 0
@@ -395,10 +396,12 @@ static HYDStatusCode send_hybridized_symbol(HYDEntropyStream *stream, const HYDH
         stream->symbol_count <<= 1;
     }
     stream->symbols[stream->symbol_pos++] = *symbol;
-    if (symbol->token >= stream->max_alphabet_size)
-        stream->max_alphabet_size = 1 + symbol->token;
-    if (symbol->token >= stream->alphabet_sizes[symbol->cluster])
-        stream->alphabet_sizes[symbol->cluster] = 1 + symbol->token;
+    if (!stream->wrote_stream_header) {
+        if (symbol->token >= stream->max_alphabet_size)
+            stream->max_alphabet_size = 1 + symbol->token;
+        if (symbol->token >= stream->alphabet_sizes[symbol->cluster])
+            stream->alphabet_sizes[symbol->cluster] = 1 + symbol->token;
+    }
     return HYD_OK;
 }
 
@@ -805,6 +808,7 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
     }
 
     hyd_free(stream->allocator, global_lengths);
+    stream->wrote_stream_header = 1;
     return bw->overflow_state;
 
 fail:
@@ -818,6 +822,8 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
     HYDStatusCode ret;
     int log_alphabet_size;
     HYDBitWriter *bw = stream->bw;
+
+    stream->max_alphabet_size = 256;
 
     if ((ret = stream_header_common(stream, &log_alphabet_size, 0)) < HYD_ERROR_START)
         goto fail;
@@ -840,6 +846,8 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
         if (ret < HYD_ERROR_START)
             goto fail;
     }
+
+    stream->wrote_stream_header = 1;
 
     return bw->overflow_state;
 
@@ -883,7 +891,7 @@ static HYDStatusCode append_state_flush(HYDAllocator *allocator, StateFlushChain
         StateFlushChain *chain = hyd_malloc(allocator, sizeof(StateFlushChain));
         if (!chain)
             return HYD_NOMEM;
-        chain->state_flushes = hyd_mallocarray(allocator, 1024, sizeof(StateFlush));
+        chain->state_flushes = hyd_mallocarray(allocator, 1 << 10, sizeof(StateFlush));
         if (!chain->state_flushes){
             hyd_free(allocator, chain);
             return HYD_NOMEM;

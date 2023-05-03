@@ -113,9 +113,82 @@ static HYDStatusCode write_header(HYDEncoder *encoder) {
     return bw->overflow_state;
 }
 
+static size_t *calculate_toc_perm(HYDEncoder *encoder, size_t *toc_size) {
+    size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->lf_group_width;
+    size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->lf_group_height;
+    size_t frame_groups_y = ((frame_h + 255) >> 8);
+    size_t frame_groups_x = ((frame_w + 255) >> 8);
+    size_t num_frame_groups = frame_groups_x * frame_groups_y;
+    *toc_size = num_frame_groups > 1 ? 2 + num_frame_groups + encoder->lf_groups_per_frame : 1;
+    size_t *toc = hyd_mallocarray(&encoder->allocator, *toc_size << 1, sizeof(size_t));
+    if (!toc)
+        return NULL;
+    toc[0] = 0; // LFGlobal
+    if (*toc_size == 1) {
+        toc[1] = 0;
+        return toc;
+    }
+    size_t idx = 1;
+    for (size_t lfid = 0; lfid < encoder->lf_groups_per_frame; lfid++) {
+        toc[idx++] = 1 + lfid; // LFGroup
+        if (lfid == 0)
+            toc[idx++] = 1 + encoder->lf_groups_per_frame; // HFGlobal
+        const HYDLFGroup *lf_group = &encoder->lf_group[lfid];
+        const size_t gcountx = (lf_group->lf_group_width + 255) >> 8;
+        const size_t gcounty = (lf_group->lf_group_height + 255) >> 8;
+        const size_t gcount = gcountx * gcounty;
+        for (size_t g = 0; g < gcount; g++) {
+            size_t gy = (encoder->one_frame ? (lf_group->lf_group_y << 3) : 0) + (g / gcountx);
+            size_t gx = (encoder->one_frame ? (lf_group->lf_group_x << 3) : 0) + (g % gcountx);
+            toc[idx++] = 2 + encoder->lf_groups_per_frame + gy * frame_groups_x + gx;
+        }
+    }
+    for (size_t j = 0; j < *toc_size; j++) {
+        toc[*toc_size + toc[j]] = j;
+    }
+    return toc;
+}
+
+static size_t *get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size) {
+    size_t *toc_perm = NULL;
+    int32_t *temp = NULL;
+    size_t *lehmer = NULL;
+
+    toc_perm = calculate_toc_perm(encoder, toc_size);
+    if (!toc_perm)
+        goto end;
+    temp = hyd_mallocarray(&encoder->allocator, *toc_size, sizeof(int32_t));
+    if (!temp)
+        goto end;
+    for (size_t i = 0; i < *toc_size; i++)
+        temp[i] = i;
+    lehmer = hyd_calloc(&encoder->allocator, *toc_size, sizeof(size_t));
+    if (!lehmer)
+        goto end;
+
+    for (size_t i = 0; i < *toc_size; i++) {
+        size_t k = 0;
+        for (size_t j = 0; j < *toc_size; j++) {
+            if (temp[j] == toc_perm[*toc_size + i]) {
+                lehmer[i] = k;
+                temp[j] = -1;
+            } else if (temp[j] >= 0) {
+                k++;
+            }
+        }
+    }
+
+end:
+    hyd_free(&encoder->allocator, toc_perm);
+    hyd_free(&encoder->allocator, temp);
+    return lehmer;
+}
+
 static HYDStatusCode write_frame_header(HYDEncoder *encoder, size_t w, size_t h) {
     HYDBitWriter *bw = &encoder->writer;
     HYDStatusCode ret;
+    HYDEntropyStream toc_stream = { 0 };
+    size_t *lehmer = NULL;
 
     if (bw->overflow_state)
         return bw->overflow_state;
@@ -182,13 +255,30 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder, size_t w, size_t h)
 
     /*
      * extensions = 0:2
-     * permuted_toc = 0:1
+     * permuted_toc = 1:1
      */
-    hyd_write(bw, 0, 3);
+    hyd_write(bw, 0x4, 3);
+
+    size_t toc_size;
+    lehmer = get_lehmer_sequence(encoder, &toc_size);
+    if (!lehmer)
+        return HYD_NOMEM;
+    if ((ret = hyd_entropy_init_stream(&toc_stream, &encoder->allocator, bw, 1 + toc_size, (const uint8_t[8]){0}, 8, 0, 0)) < HYD_ERROR_START)
+        goto end;
+    if ((ret = hyd_entropy_send_symbol(&toc_stream, 0, toc_size)) < HYD_ERROR_START)
+        goto end;
+    for (size_t i = 0; i < toc_size; i++) {
+        if ((ret = hyd_entropy_send_symbol(&toc_stream, 0, lehmer[i])) < HYD_ERROR_START)
+            goto end;
+    }
+    if ((ret = hyd_prefix_finalize_stream(&toc_stream)) < HYD_ERROR_START)
+        goto end;
 
     ret = hyd_write_zero_pad(bw);
     encoder->wrote_frame_header = 1;
 
+end:
+    hyd_free(&encoder->allocator, lehmer);
     return ret;
 }
 
@@ -601,7 +691,8 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
         hyd_entropy_init_stream(&encoder->hf_stream, &encoder->allocator, &encoder->working_writer,
                                 num_syms, map, 7425, 1, 0);
         hyd_entropy_set_hybrid_config(&encoder->hf_stream, 0, 0, 4, 1, 0);
-        encoder->hf_stream_barrier = hyd_calloc(&encoder->allocator, num_frame_groups, sizeof(size_t));
+        // first LF Group always the largest
+        encoder->hf_stream_barrier = hyd_calloc(&encoder->allocator, num_groups, sizeof(size_t));
         if (!encoder->hf_stream_barrier) {
             ret = HYD_NOMEM;
             goto end;
@@ -609,13 +700,40 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     }
 
     if ((ret = initialize_hf_coeffs(encoder, &encoder->hf_stream, lf_group, non_zero_count,
-            encoder->hf_stream_barrier + encoder->groups_encoded, non_zeroes)) < HYD_ERROR_START)
+            encoder->hf_stream_barrier, non_zeroes)) < HYD_ERROR_START)
         goto end;
+
+    if (!encoder->tile_sent) {
+        // default params HFGlobal
+        hyd_write_bool(&encoder->working_writer, 1);
+        // num hf presets
+        hyd_write(&encoder->working_writer, 0, hyd_cllog2(num_frame_groups));
+        // HF Pass order
+        hyd_write(&encoder->working_writer, 2, 2);
+        if ((ret = hyd_ans_write_stream_header(&encoder->hf_stream)) < HYD_ERROR_START)
+            goto end;
+        if (num_frame_groups > 1) {
+            hyd_bitwriter_flush(&encoder->working_writer);
+            encoder->section_endpos[encoder->section_count++] = encoder->working_writer.buffer_pos;
+        }
+    }
+
+    size_t soff = 0;
+    for (size_t g = 0; g < num_groups; g++) {
+        if ((ret = hyd_ans_write_stream_symbols(&encoder->hf_stream, soff, encoder->hf_stream_barrier[g])) < HYD_ERROR_START)
+            goto end;
+        soff += encoder->hf_stream_barrier[g];
+        if (num_frame_groups > 1) {
+            hyd_bitwriter_flush(&encoder->working_writer);
+            encoder->section_endpos[encoder->section_count++] = encoder->working_writer.buffer_pos;
+        }
+    }
+    memset(encoder->hf_stream_barrier, 0, num_groups * sizeof(size_t));
+    encoder->hf_stream.symbol_pos = 0;
 
     if (!encoder->one_frame) {
         ret = hyd_encode_end(encoder);
     } else {
-        encoder->groups_encoded += num_groups;
         encoder->tile_sent = 1;
     }
 
@@ -631,54 +749,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encode_end(HYDEncoder *encoder) {
     size_t frame_groups_y = ((frame_h + 255) >> 8);
     size_t frame_groups_x = ((frame_w + 255) >> 8);
     size_t num_frame_groups = frame_groups_x * frame_groups_y;
-    size_t *hf_zig_zag = NULL;
     HYDStatusCode ret = HYD_OK;
-
-    // default params HFGlobal
-    hyd_write_bool(&encoder->working_writer, 1);
-    // num hf presets
-    hyd_write(&encoder->working_writer, 0, hyd_cllog2(num_frame_groups));
-    // HF Pass order
-    hyd_write(&encoder->working_writer, 2, 2);
-
-    if ((ret = hyd_ans_write_stream_header(&encoder->hf_stream)) < HYD_ERROR_START)
-        goto end;
-
-    if (num_frame_groups > 1) {
-        hyd_bitwriter_flush(&encoder->working_writer);
-        encoder->section_endpos[encoder->section_count++] = encoder->working_writer.buffer_pos;
-    }
-
-    hf_zig_zag = hyd_mallocarray(&encoder->allocator, num_frame_groups, sizeof(size_t));
-    if (!hf_zig_zag) {
-        ret = HYD_NOMEM;
-        goto end;
-    }
-    size_t gid = 0;
-    for (size_t lfid = 0; lfid < encoder->lf_groups_per_frame; lfid++) {
-        HYDLFGroup *lf_group = &encoder->lf_group[lfid];
-        const size_t gcount_y = (lf_group->lf_group_height + 255) >> 8;
-        const size_t gcount_x = (lf_group->lf_group_width + 255) >> 8;
-        const size_t num_groups = gcount_y * gcount_x;
-        for (size_t g = 0; g < num_groups; g++) {
-            const size_t gy = (encoder->one_frame ? (lf_group->lf_group_y << 3) : 0) + (g / gcount_x);
-            const size_t gx = (encoder->one_frame ? (lf_group->lf_group_x << 3) : 0) + (g % gcount_x);
-            hf_zig_zag[gy * frame_groups_x + gx] = gid++;
-        }
-    }
-    for (size_t g = 1; g < num_frame_groups; g++)
-        encoder->hf_stream_barrier[g] += encoder->hf_stream_barrier[g - 1];
-    for (size_t g = 0; g < num_frame_groups; g++) {
-        size_t gindex = hf_zig_zag[g];
-        size_t soff = gindex ? encoder->hf_stream_barrier[gindex - 1] : 0;
-        size_t count = encoder->hf_stream_barrier[gindex] - soff;
-        if ((ret = hyd_ans_write_stream_symbols(&encoder->hf_stream, soff, count)) < HYD_ERROR_START)
-            goto end;
-        if (num_frame_groups > 1) {
-            hyd_bitwriter_flush(&encoder->working_writer);
-            encoder->section_endpos[encoder->section_count++] = encoder->working_writer.buffer_pos;
-        }
-    }
 
     // write TOC to main buffer
     hyd_bitwriter_flush(&encoder->working_writer);
@@ -704,9 +775,6 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encode_end(HYDEncoder *encoder) {
 
     encoder->wrote_frame_header = 0;
     ret = hyd_flush(encoder);
-
-end:
-    hyd_free(&encoder->allocator, hf_zig_zag);
     hyd_entropy_stream_destroy(&encoder->hf_stream);
     hyd_free(&encoder->allocator, encoder->section_endpos);
     hyd_free(&encoder->allocator, encoder->hf_stream_barrier);
