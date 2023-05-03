@@ -44,18 +44,6 @@ static const HYDVLCElement prefix_level0_table[6] = {
     {0, 2}, {7, 4}, {3, 3}, {2, 2}, {1, 2}, {15, 4},
 };
 
-static const uint32_t br_lut[16] = {
-    0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
-    0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF,
-};
-
-static uint32_t bit_reverse(const uint32_t b) {
-    uint32_t c = 0;
-    for (unsigned i = 0; i < 32; i += 4)
-        c |= br_lut[(b >> i) & 0xF] << (28 - i);
-    return c;
-}
-
 static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
     hyd_write_bool(bw, b);
     if (!b)
@@ -227,7 +215,8 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     }
 
     for (uint16_t sym = 0; sym < stream->max_alphabet_size; sym++) {
-        alias_table[sym].cutoffs = hyd_malloc(stream->allocator, 3 * (alias_table[sym].count + 1) * sizeof(int16_t));
+        alias_table[sym].cutoffs = hyd_mallocarray(stream->allocator, 3 * (alias_table[sym].count + 1),
+            sizeof(int16_t));
         if (!alias_table[sym].cutoffs)
             return HYD_NOMEM;
         memset(alias_table[sym].cutoffs, -1, 3 * (alias_table[sym].count + 1) * sizeof(int16_t));
@@ -358,7 +347,7 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
     if (lz77_min_symbol)
         stream->cluster_map[num_dists - 1] = stream->num_clusters++;
 
-    stream->configs = hyd_malloc(allocator, stream->num_clusters * sizeof(HYDHybridUintConfig));
+    stream->configs = hyd_mallocarray(allocator, stream->num_clusters, sizeof(HYDHybridUintConfig));
     stream->alphabet_sizes = hyd_calloc(allocator, stream->num_clusters, sizeof(uint16_t));
     if (!stream->configs || !stream->alphabet_sizes) {
         ret = HYD_NOMEM;
@@ -603,7 +592,7 @@ end:
 static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *table,
                                         const uint16_t *lengths, uint32_t alphabet_size) {
     HYDStatusCode ret = HYD_OK;
-    HYDVLCElement *pre_table = hyd_malloc(allocator, alphabet_size * sizeof(HYDVLCElement));
+    HYDVLCElement *pre_table = hyd_mallocarray(allocator, alphabet_size, sizeof(HYDVLCElement));
     if (!pre_table)
         return HYD_NOMEM;
 
@@ -619,7 +608,7 @@ static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *
         if (!pre_table[j].length)
             continue;
         uint32_t s = pre_table[j].symbol;
-        table[s].symbol = bit_reverse(code);
+        table[s].symbol = hyd_bitswap32(code);
         table[s].length = pre_table[j].length;
         code += UINT64_C(1) << (32 - pre_table[j].length);
     }
@@ -894,7 +883,7 @@ static HYDStatusCode append_state_flush(HYDAllocator *allocator, StateFlushChain
         StateFlushChain *chain = hyd_malloc(allocator, sizeof(StateFlushChain));
         if (!chain)
             return HYD_NOMEM;
-        chain->state_flushes = hyd_malloc(allocator, sizeof(StateFlush) << 10);
+        chain->state_flushes = hyd_mallocarray(allocator, 1024, sizeof(StateFlush));
         if (!chain->state_flushes){
             hyd_free(allocator, chain);
             return HYD_NOMEM;
@@ -940,7 +929,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         goto end;
     }
 
-    flushes->state_flushes = hyd_malloc(stream->allocator, sizeof(StateFlush) << 10);
+    flushes->state_flushes = hyd_mallocarray(stream->allocator, 1024, sizeof(StateFlush));
     if (!flushes->state_flushes) {
         ret = HYD_NOMEM;
         goto end;

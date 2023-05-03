@@ -76,7 +76,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     if (metadata->tile_size_shift_y < -1 || metadata->tile_size_shift_y > 3)
         return HYD_API_ERROR;
 
-    encoder->one_frame = metadata->tile_size_shift_x == -1 || metadata->tile_size_shift_y == -1;
+    encoder->one_frame = metadata->tile_size_shift_x < 0 || metadata->tile_size_shift_y < 0;
     encoder->lf_group_count_x = (metadata->width + 2047) >> 11;
     encoder->lf_group_count_y = (metadata->height + 2047) >> 11;
     encoder->lf_groups_per_frame = encoder->one_frame ? encoder->lf_group_count_x * encoder->lf_group_count_y : 1;
