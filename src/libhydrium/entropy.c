@@ -239,33 +239,39 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     return HYD_OK;
 }
 
-static int16_t write_ans_frequencies(HYDEntropyStream *stream, uint16_t *frequencies) {
+static int16_t write_ans_frequencies(HYDEntropyStream *stream, const HYDHybridUintConfig *config,
+                                     uint16_t *frequencies) {
     HYDBitWriter *bw = stream->bw;
     size_t total = 0;
     for (size_t k = 0; k < stream->max_alphabet_size; k++)
         total += frequencies[k];
     if (!total)
         total = 1;
+    size_t max_token = (((29 - config->split_exponent + config->msb_in_token + config->lsb_in_token) <<
+        (config->msb_in_token + config->lsb_in_token)) | ~(~UINT32_C(0) << (config->msb_in_token +
+        config->lsb_in_token))) + (1 << config->split_exponent);
     size_t new_total = 0;
     for (size_t k = 0; k < stream->max_alphabet_size; k++) {
-        if (!frequencies[k])
-            frequencies[k] = 1;
+        if (k > max_token)
+            continue;
         frequencies[k] = (((uint32_t)frequencies[k] << 12) / total) & 0xFFFF;
         if (!frequencies[k])
             frequencies[k] = 1;
         new_total += frequencies[k];
     }
 
-    size_t j = 0;
+    size_t j = stream->max_alphabet_size - 1;
     while (new_total > (1 << 12)) {
         size_t diff = new_total - (1 << 12);
         if (diff < frequencies[j]) {
             frequencies[j] -= diff;
             new_total -= diff;
             break;
+        } else if (frequencies[j] > 1) {
+            new_total -= frequencies[j] - 1;
+            frequencies[j] = 1;
         }
-        new_total -= frequencies[j] - 1;
-        frequencies[j++] = 1;
+        j--;
     }
 
     frequencies[0] += (1 << 12) - new_total;
@@ -389,7 +395,8 @@ static void hybridize(uint32_t symbol, HYDHybridSymbol *hybrid_symbol, const HYD
 
 static HYDStatusCode send_hybridized_symbol(HYDEntropyStream *stream, const HYDHybridSymbol *symbol) {
     if (stream->symbol_pos >= stream->symbol_count) {
-        HYDHybridSymbol *symbols = hyd_reallocarray(stream->allocator, stream->symbols, stream->symbol_count << 1, sizeof(HYDHybridSymbol));
+        HYDHybridSymbol *symbols = hyd_reallocarray(stream->allocator, stream->symbols, stream->symbol_count << 1,
+            sizeof(HYDHybridSymbol));
         if (!symbols)
             return HYD_NOMEM;
         stream->symbols = symbols;
@@ -837,7 +844,7 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
         goto fail;
     }
     for (size_t i = 0; i < stream->num_clusters; i++) {
-        int16_t uniq_pos = write_ans_frequencies(stream, stream->frequencies + i * stream->max_alphabet_size);
+        int16_t uniq_pos = write_ans_frequencies(stream, &stream->configs[i], stream->frequencies + i * stream->max_alphabet_size);
         if (uniq_pos < HYD_ERROR_START) {
             ret = uniq_pos;
             goto fail;

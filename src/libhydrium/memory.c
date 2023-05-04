@@ -99,6 +99,8 @@ static void *profiling_realloc(void *ptr, size_t size, void *profilerv) {
     profiler->current_alloced -= *(size_t *)new_ptr;
     if (new_ptr == og_ptr)
         profiler->total_alloced -= *(size_t *)new_ptr;
+    if (profiler->current_alloced > profiler->max_alloced)
+        profiler->max_alloced = profiler->current_alloced;
     *(size_t *)new_ptr = size;
     return new_ptr + sizeof(size_t);
 }

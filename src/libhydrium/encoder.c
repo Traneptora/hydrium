@@ -686,7 +686,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
                 map[555 + 458 * k + 2 * j + 1] = k + 30;
             }
         }
-        const size_t num_syms = 3 * lf_group->lf_varblock_width * lf_group->lf_varblock_height + non_zero_count;
+        const size_t num_syms = 1 << 12;
         memset(&encoder->hf_stream, 0, sizeof(HYDEntropyStream));
         hyd_entropy_init_stream(&encoder->hf_stream, &encoder->allocator, &encoder->working_writer,
                                 num_syms, map, 7425, 1, 0);
