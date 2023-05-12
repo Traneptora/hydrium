@@ -264,7 +264,19 @@ HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder);
 
+/**
+ * @brief Allocate a new HYDAllocator that profiles memory used, stored in the given HYDMemoryProfiler.
+ *
+ * @param profiler a HYDMemoryProfiler struct used to contain the data for the profiling allocator
+ * @return a HYDAllocator struct pointer upon success, NULL upon allocation failure.
+ */
 HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *profiler);
+
+/**
+ * @brief Deallocate a HYDAllocator that was allocated by hyd_profiling_allocator_new.
+ *
+ * @param allocator A HYDAllocator object to deallocate.
+ */
 HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator);
 
 #endif /* HYDRIUM_H_ */
