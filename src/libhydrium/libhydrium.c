@@ -122,6 +122,8 @@ HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
+    if (encoder->one_frame && !encoder->last_tile)
+        return HYD_OK;
     hyd_bitwriter_flush(&encoder->writer);
     size_t tocopy = encoder->writer.buffer_len - encoder->writer.buffer_pos;
     if (tocopy > encoder->working_writer.buffer_pos - encoder->copy_pos)
@@ -132,6 +134,6 @@ HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
     encoder->copy_pos += tocopy;
     if (encoder->copy_pos >= encoder->working_writer.buffer_pos)
         return HYD_OK;
-    
+
     return HYD_NEED_MORE_OUTPUT;
 }

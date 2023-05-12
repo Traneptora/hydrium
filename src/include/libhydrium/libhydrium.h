@@ -106,6 +106,10 @@ typedef struct HYDImageMetadata {
      *
      * Tiles may be larger than the image width, in which case only
      * one tile will exist in the horizontal direction.
+     *
+     * A special value of -1 may be passed, which tells libhydrium to
+     * use one Frame for the entire image. This mode uses more memory,
+     * but it decodes faster with libjxl.
      */
     int tile_size_shift_x;
 
@@ -116,6 +120,10 @@ typedef struct HYDImageMetadata {
      *
      * Tiles may be larger than the image height, in which case only
      * one tile will exist in the vertical direction.
+     *
+     * A special value of -1 may be passed, which tells libhydrium to
+     * use one Frame for the entire image. This mode uses more memory,
+     * but it decodes faster with libjxl.
      */
     int tile_size_shift_y;
 } HYDImageMetadata;
@@ -162,9 +170,9 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
 /**
  * @brief Provide a buffer of 16-bit RGB pixel data to the hydrium encoder for it to encode.
  *
- * Hydrium encodes one tile at a time, and no tile references any other tile. A tile is 256x256, unless
- * tile_size_shift_x and/or tile_size_shift_y are set to something nonzero. In that case, the size of a tile
- * will be WxH, where W is (256 << tile_size_shift_x) and H is (256 << tile_size_shift_y).
+ * By default, hydrium encodes one tile at a time, and no tile references any other tile. A tile is 256x256,
+ * unless tile_size_shift_x and/or tile_size_shift_y are set to something positive. In that case, the size of a
+ * tile will be WxH, where W is (256 << tile_size_shift_x) and H is (256 << tile_size_shift_y).
  *
  * This function accepts an array of three buffers of pixel data, although they may overlap.
  *
@@ -255,8 +263,6 @@ HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size
  * @return HYD_OK upon success, a negative status code upon failure.
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder);
-
-HYDRIUM_EXPORT HYDStatusCode hyd_encode_end(HYDEncoder *encoder);
 
 HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *profiler);
 HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator);

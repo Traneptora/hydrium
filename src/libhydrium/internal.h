@@ -28,6 +28,7 @@ struct HYDEncoder {
     int16_t *xyb;
 
     int one_frame;
+    int last_tile;
     HYDLFGroup *lf_group;
     size_t lf_group_count_x;
     size_t lf_group_count_y;

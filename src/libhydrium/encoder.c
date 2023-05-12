@@ -211,8 +211,7 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder, size_t w, size_t h)
      */
     hyd_write(bw, 0x4C, 10);
 
-    int is_last = encoder->one_frame || ((encoder->lf_group->lf_group_x + 1) * w >= encoder->metadata.width
-        && (encoder->lf_group->lf_group_y + 1) * h >= encoder->metadata.height);
+    int is_last = encoder->one_frame || encoder->last_tile;
     int have_crop = !encoder->one_frame && (!is_last || encoder->lf_group->lf_group_x != 0
         || encoder->lf_group->lf_group_y != 0);
 
@@ -297,6 +296,8 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     }
     if (tile_x >= (encoder->metadata.width + w - 1) / w || tile_y >= (encoder->metadata.height + h - 1) / h)
         return HYD_API_ERROR;
+
+    encoder->last_tile = (tile_x + 1) * w >= encoder->metadata.width && (tile_y + 1) * h >= encoder->metadata.height;
 
     const size_t num_lf_groups = encoder->one_frame ? encoder->lf_group_count_x * encoder->lf_group_count_y : 1;
     for (size_t id = 0; id < num_lf_groups; id++) {
@@ -569,26 +570,67 @@ static HYDStatusCode realloc_working_buffer(HYDAllocator *allocator, uint8_t **b
     return HYD_OK;
 }
 
+static HYDStatusCode encode_end(HYDEncoder *encoder) {
+    size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->lf_group_width;
+    size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->lf_group_height;
+    size_t frame_groups_y = ((frame_h + 255) >> 8);
+    size_t frame_groups_x = ((frame_w + 255) >> 8);
+    size_t num_frame_groups = frame_groups_x * frame_groups_y;
+    HYDStatusCode ret = HYD_OK;
+
+    // write TOC to main buffer
+    hyd_bitwriter_flush(&encoder->working_writer);
+
+    hyd_write_zero_pad(&encoder->writer);
+
+    if (num_frame_groups > 1) {
+        size_t last_end_pos = 0;
+        for (size_t index = 0; index < encoder->section_count; index++) {
+            hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712},
+                                            (const uint32_t[4]){10, 14, 22, 30},
+                                            encoder->section_endpos[index] - last_end_pos);
+            last_end_pos = encoder->section_endpos[index];
+        }
+        encoder->section_count = 0;
+    } else {
+        hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712},
+                                        (const uint32_t[4]){10, 14, 22, 30},
+                                        encoder->working_writer.buffer_pos);
+    }
+
+    hyd_write_zero_pad(&encoder->writer);
+
+    encoder->wrote_frame_header = 0;
+    ret = hyd_flush(encoder);
+    hyd_entropy_stream_destroy(&encoder->hf_stream);
+    hyd_free(&encoder->allocator, encoder->section_endpos);
+    hyd_free(&encoder->allocator, encoder->hf_stream_barrier);
+    return ret;
+}
+
 static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t tile_y) {
     uint8_t *non_zeroes = NULL;
     uint16_t *hf_mult = NULL;
     HYDStatusCode ret = HYD_OK;
+    int need_buffer_init = !encoder->working_writer.buffer || !encoder->one_frame;
     if (!encoder->working_writer.buffer) {
         encoder->working_writer.buffer = hyd_malloc(&encoder->allocator, 1 << 12);
         if (!encoder->working_writer.buffer) {
             ret = HYD_NOMEM;
             goto end;
         }
-        ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_writer.buffer, 1 << 12, 0, 0);
-    } else if (!encoder->one_frame) {
+        encoder->working_writer.buffer_len = 1 << 12;
+    }
+    if (need_buffer_init) {
         ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_writer.buffer,
                                    encoder->working_writer.buffer_len, 0, 0);
+        encoder->copy_pos = 0;
+        encoder->working_writer.allocator = &encoder->allocator;
+        encoder->working_writer.realloc_func = &realloc_working_buffer;
     }
+
     if (ret < HYD_ERROR_START)
         goto end;
-    encoder->working_writer.allocator = &encoder->allocator;
-    encoder->working_writer.realloc_func = &realloc_working_buffer;
-    encoder->copy_pos = 0;
 
     const size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
     HYDLFGroup *lf_group = &encoder->lf_group[lfid];
@@ -734,52 +776,14 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     memset(encoder->hf_stream_barrier, 0, num_groups * sizeof(size_t));
     encoder->hf_stream.symbol_pos = 0;
 
-    if (!encoder->one_frame)
-        ret = hyd_encode_end(encoder);
-    else
+    if (!encoder->one_frame || encoder->last_tile)
+        ret = encode_end(encoder);
+    if (encoder->one_frame)
         encoder->tile_sent = 1;
 
 end:
     hyd_free(&encoder->allocator, hf_mult);
     hyd_free(&encoder->allocator, non_zeroes);
-    return ret;
-}
-
-HYDRIUM_EXPORT HYDStatusCode hyd_encode_end(HYDEncoder *encoder) {
-    size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->lf_group_width;
-    size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->lf_group_height;
-    size_t frame_groups_y = ((frame_h + 255) >> 8);
-    size_t frame_groups_x = ((frame_w + 255) >> 8);
-    size_t num_frame_groups = frame_groups_x * frame_groups_y;
-    HYDStatusCode ret = HYD_OK;
-
-    // write TOC to main buffer
-    hyd_bitwriter_flush(&encoder->working_writer);
-
-    hyd_write_zero_pad(&encoder->writer);
-
-    if (num_frame_groups > 1) {
-        size_t last_end_pos = 0;
-        for (size_t index = 0; index < encoder->section_count; index++) {
-            hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712},
-                                            (const uint32_t[4]){10, 14, 22, 30},
-                                            encoder->section_endpos[index] - last_end_pos);
-            last_end_pos = encoder->section_endpos[index];
-        }
-        encoder->section_count = 0;
-    } else {
-        hyd_write_u32(&encoder->writer, (const uint32_t[4]){0, 1024, 17408, 4211712},
-                                        (const uint32_t[4]){10, 14, 22, 30},
-                                        encoder->working_writer.buffer_pos);
-    }
-
-    hyd_write_zero_pad(&encoder->writer);
-
-    encoder->wrote_frame_header = 0;
-    ret = hyd_flush(encoder);
-    hyd_entropy_stream_destroy(&encoder->hf_stream);
-    hyd_free(&encoder->allocator, encoder->section_endpos);
-    hyd_free(&encoder->allocator, encoder->hf_stream_barrier);
     return ret;
 }
 

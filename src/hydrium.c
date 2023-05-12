@@ -164,31 +164,16 @@ int main(int argc, const char *argv[]) {
             }
             if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
                 goto done;
-            if (metadata.tile_size_shift_x >= 0 && metadata.tile_size_shift_y >= 0) {
-                do {
-                    ret = hyd_flush(encoder);
-                    size_t written;
-                    hyd_release_output_buffer(encoder, &written);
-                    fwrite(output_buffer, written, 1, fp);
-                    hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
-                } while (ret == HYD_NEED_MORE_OUTPUT);
-            }
+            do {
+                ret = hyd_flush(encoder);
+                size_t written;
+                hyd_release_output_buffer(encoder, &written);
+                fwrite(output_buffer, written, 1, fp);
+                hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+            } while (ret == HYD_NEED_MORE_OUTPUT);
             if (ret != HYD_OK)
                 goto done;
         }
-    }
-
-    if (metadata.tile_size_shift_x < 0 || metadata.tile_size_shift_y < 0) {
-        ret = hyd_encode_end(encoder);
-        if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
-            goto done;
-        do {
-            ret = hyd_flush(encoder);
-            size_t written;
-            hyd_release_output_buffer(encoder, &written);
-            fwrite(output_buffer, written, 1, fp);
-            hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
-        } while (ret == HYD_NEED_MORE_OUTPUT);
     }
 
 done:
