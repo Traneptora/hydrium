@@ -38,7 +38,10 @@ int main(int argc, const char *argv[]) {
     const size_t chunk_limit = 1 << 20;
     spng_set_chunk_limits(spng_context, chunk_limit, chunk_limit);
 
-    fin = fopen(argv[1], "rb");
+    if (!strcmp(argv[1], "-"))
+        fin = stdin;
+    else
+        fin = fopen(argv[1], "rb");
     if (!fin) {
         fprintf(stderr, "%s: error opening file: %s\n", argv[0], argv[1]);
         goto done;
@@ -122,14 +125,13 @@ int main(int argc, const char *argv[]) {
         goto done;
     }
 
-    if (argc > 2) {
+    if (argc > 2 && strcmp(argv[2], "-")) {
         fp = fopen(argv[2], "wb");
         if (!fp) {
             fprintf(stderr, "%s: error opening file for writing: %s\n", argv[0], argv[2]);
             goto done;
         }
     }
-
 
     if ((ret = hyd_set_metadata(encoder, &metadata)) < HYD_ERROR_START)
         goto done;
