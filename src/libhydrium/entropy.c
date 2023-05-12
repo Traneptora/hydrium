@@ -239,21 +239,15 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     return HYD_OK;
 }
 
-static int16_t write_ans_frequencies(HYDEntropyStream *stream, const HYDHybridUintConfig *config,
-                                     uint16_t *frequencies) {
+static int16_t write_ans_frequencies(HYDEntropyStream *stream, uint16_t *frequencies) {
     HYDBitWriter *bw = stream->bw;
     size_t total = 0;
     for (size_t k = 0; k < stream->max_alphabet_size; k++)
         total += frequencies[k];
     if (!total)
         total = 1;
-    size_t max_token = (((29 - config->split_exponent + config->msb_in_token + config->lsb_in_token) <<
-        (config->msb_in_token + config->lsb_in_token)) | ~(~UINT32_C(0) << (config->msb_in_token +
-        config->lsb_in_token))) + (1 << config->split_exponent);
     size_t new_total = 0;
     for (size_t k = 0; k < stream->max_alphabet_size; k++) {
-        if (k > max_token)
-            continue;
         frequencies[k] = (((uint32_t)frequencies[k] << 12) / total) & 0xFFFF;
         if (!frequencies[k])
             frequencies[k] = 1;
@@ -290,6 +284,7 @@ static int16_t write_ans_frequencies(HYDEntropyStream *stream, const HYDHybridUi
         hyd_write(bw, frequencies[0], 12);
         return HYD_DEFAULT;
     }
+
     // simple dist and flat dist = 0
     hyd_write(bw, 0, 2);
     // len = 3
@@ -830,7 +825,13 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
     int log_alphabet_size;
     HYDBitWriter *bw = stream->bw;
 
-    stream->max_alphabet_size = 256;
+    for (size_t i = 0; i < stream->num_clusters; i++) {
+        const HYDHybridUintConfig *config = &stream->configs[i];
+        size_t max_token = (((29 - config->split_exponent + config->msb_in_token + config->lsb_in_token) <<
+            (config->msb_in_token + config->lsb_in_token)) | ~(~UINT32_C(0) << (config->msb_in_token +
+            config->lsb_in_token))) + (1 << config->split_exponent);
+        stream->max_alphabet_size = hyd_max(stream->max_alphabet_size, max_token);
+    }
 
     if ((ret = stream_header_common(stream, &log_alphabet_size, 0)) < HYD_ERROR_START)
         goto fail;
@@ -844,7 +845,7 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
         goto fail;
     }
     for (size_t i = 0; i < stream->num_clusters; i++) {
-        int16_t uniq_pos = write_ans_frequencies(stream, &stream->configs[i], stream->frequencies + i * stream->max_alphabet_size);
+        int16_t uniq_pos = write_ans_frequencies(stream, stream->frequencies + i * stream->max_alphabet_size);
         if (uniq_pos < HYD_ERROR_START) {
             ret = uniq_pos;
             goto fail;
