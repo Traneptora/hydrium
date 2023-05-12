@@ -595,7 +595,8 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     forward_dct(encoder, lf_group);
     const size_t num_groups = ((lf_group->lf_group_width + 255) >> 8) * ((lf_group->lf_group_height + 255) >> 8);
     non_zeroes = hyd_calloc(&encoder->allocator, 3072, num_groups);
-    hf_mult = hyd_mallocarray(&encoder->allocator, lf_group->lf_varblock_width * lf_group->lf_varblock_height, sizeof(uint16_t));
+    hf_mult = hyd_mallocarray(&encoder->allocator, lf_group->lf_varblock_width * lf_group->lf_varblock_height,
+        sizeof(uint16_t));
     if (!non_zeroes || !hf_mult) {
         ret = HYD_NOMEM;
         goto end;
@@ -626,7 +627,8 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
                                         + (encoder->xyb[3 * (vy7 + vx + 6) + 1] & UINT32_C(0x7FFF))
                                         + (encoder->xyb[3 * (vy6 + vx + 7) + 1] & UINT32_C(0x7FFF))
                                         + (encoder->xyb[3 * (vy7 + vx + 6) + 2] & UINT32_C(0x7FFF))
-                                        + (encoder->xyb[3 * (vy6 + vx + 7) + 2] & UINT32_C(0x7FFF))) >> 14) & UINT32_C(0xF);
+                                        + (encoder->xyb[3 * (vy6 + vx + 7) + 2] & UINT32_C(0x7FFF))) >> 14)
+                                            & UINT32_C(0xF);
                     const size_t hf_mult_pos = (vy >> 3) * lf_group->lf_varblock_width + (vx >> 3);
                     hf_mult[hf_mult_pos] = hyd_max(hf, 5);
                     for (int i = 0; i < 3; i++) {
@@ -654,7 +656,8 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     size_t num_frame_groups = ((frame_w + 255) >> 8) * ((frame_h + 255) >> 8);
     if (!encoder->tile_sent) {
         if (num_frame_groups > 1) {
-            encoder->section_endpos = hyd_calloc(&encoder->allocator, 2 + encoder->lf_groups_per_frame + num_frame_groups, sizeof(size_t));
+            encoder->section_endpos = hyd_calloc(&encoder->allocator, 2 + encoder->lf_groups_per_frame +
+                num_frame_groups, sizeof(size_t));
             if (!encoder->section_endpos) {
                 ret = HYD_NOMEM;
                 goto end;
@@ -731,11 +734,10 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     memset(encoder->hf_stream_barrier, 0, num_groups * sizeof(size_t));
     encoder->hf_stream.symbol_pos = 0;
 
-    if (!encoder->one_frame) {
+    if (!encoder->one_frame)
         ret = hyd_encode_end(encoder);
-    } else {
+    else
         encoder->tile_sent = 1;
-    }
 
 end:
     hyd_free(&encoder->allocator, hf_mult);
