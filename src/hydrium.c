@@ -2,6 +2,15 @@
  * Hydrium basic implementation
  */
 
+#ifdef MSC_VER
+    #include <io.h>
+    #define hyd_isatty(f) _isatty(_fileno(f))
+#else
+    #define _POSIX_C_SOURCE 1
+    #include <unistd.h>
+    #define hyd_isatty(f) isatty(fileno(f))
+#endif
+
 #include <errno.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -12,20 +21,70 @@
 
 #include "libhydrium/libhydrium.h"
 
+static void print_usage(const char *argv0) {
+    fprintf(stderr, "Usage: %s [options] <input.png> <output.jxl>\n", argv0);
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "    --help         Print this message\n");
+    fprintf(stderr, "    --tile-size=N  Use Tile Size Shift = N, valid values are 0, 1, 2, 3\n");
+    fprintf(stderr, "    --one-frame    Use one frame. Uses more memory but decodes faster.\n");
+}
+
 int main(int argc, const char *argv[]) {
     uint64_t width, height;
     void *buffer = NULL, *output_buffer = NULL;
     HYDEncoder *encoder = NULL;
     HYDAllocator *allocator = NULL;
     int ret = 1;
-    FILE *fp = stdout, *fin = NULL;
+    FILE *fp = stdout, *fin = stdin;
     HYDMemoryProfiler profiler = { 0 };
 
     fprintf(stderr, "libhydrium version %s\n", HYDRIUM_VERSION_STRING);
 
-    if (argc < 2 || !strcmp(argv[1], "--help")) {
-        fprintf(stderr, "Usage: %s <input.png> [output.jxl]\n", argv[0]);
-        return argc < 2;
+    if (argc < 2) {
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    int one_frame = 0;
+    long tilesize = 0;
+    int argp = 1;
+    const char *in_fname = NULL;
+    const char *out_fname = NULL;
+
+    while (argp < argc) {
+        if (strncmp(argv[argp], "--", 2)) {
+            if (!in_fname)
+                in_fname = argv[argp];
+            else if (!out_fname)
+                out_fname = argv[argp];
+            else {
+                fprintf(stderr, "Invalid trailing arg: %s\n", argv[argp]);
+                print_usage(argv[0]);
+                return 2;
+            }
+        } else if (!strcmp(argv[argp], "--help")) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (!argv[argp][2]) {
+            argp++;
+            break;
+        } else if (!strcmp(argv[argp], "--one-frame")) {
+            one_frame = 1;
+        } else if (!strncmp(argv[argp], "--tile-size=", 12)) {
+            errno = 0;
+            tilesize = strtol(argv[argp] + 12, NULL, 10);
+            if (errno) {
+                fprintf(stderr, "Invalid integer: %s\n", argv[argp] + 12);
+                print_usage(argv[0]);
+                return 2;
+            }
+            if (tilesize < 0 || tilesize > 3) {
+                fprintf(stderr, "Invalid tile size, must be 0-3: %s\n", argv[argp] + 12);
+                print_usage(argv[0]);
+                return 2;
+            }
+        }
+        argp++;
     }
 
     spng_ctx *spng_context = spng_ctx_new(0);
@@ -38,14 +97,14 @@ int main(int argc, const char *argv[]) {
     const size_t chunk_limit = 1 << 20;
     spng_set_chunk_limits(spng_context, chunk_limit, chunk_limit);
 
-    if (!strcmp(argv[1], "-"))
-        fin = stdin;
-    else
-        fin = fopen(argv[1], "rb");
-    if (!fin) {
-        fprintf(stderr, "%s: error opening file: %s\n", argv[0], argv[1]);
-        goto done;
+    if (in_fname && strcmp(in_fname, "-")) {
+        fin = fopen(in_fname, "rb");
+        if (!fin) {
+            fprintf(stderr, "%s: error opening file: %s\n", argv[0], in_fname);
+            goto done;
+        }
     }
+
     spng_set_png_file(spng_context, fin);
 
     struct spng_ihdr ihdr;
@@ -78,8 +137,8 @@ int main(int argc, const char *argv[]) {
     metadata.width = width;
     metadata.height = height;
     metadata.linear_light = 0;
-    metadata.tile_size_shift_x = -1;
-    metadata.tile_size_shift_y = -1;
+    metadata.tile_size_shift_x = one_frame ? -1 : tilesize;
+    metadata.tile_size_shift_y = one_frame ? -1 : tilesize;
     const uint32_t size_shift_x = metadata.tile_size_shift_x < 0 ? 3 : metadata.tile_size_shift_x;
     const uint32_t size_shift_y = metadata.tile_size_shift_y < 0 ? 3 : metadata.tile_size_shift_y;
     const uint32_t tile_size_x = 256 << size_shift_x;
@@ -125,12 +184,19 @@ int main(int argc, const char *argv[]) {
         goto done;
     }
 
-    if (argc > 2 && strcmp(argv[2], "-")) {
-        fp = fopen(argv[2], "wb");
+    if (out_fname && strcmp(out_fname, "-")) {
+        fp = fopen(out_fname, "wb");
         if (!fp) {
-            fprintf(stderr, "%s: error opening file for writing: %s\n", argv[0], argv[2]);
+            fprintf(stderr, "%s: error opening file for writing: %s\n", argv[0], out_fname);
             goto done;
         }
+    }
+
+    if (hyd_isatty(fp)) {
+        fprintf(stderr, "%s: Not writing compressed data to a terminal.\n", argv[0]);
+        print_usage(argv[0]);
+        ret = 3;
+        goto done;
     }
 
     if ((ret = hyd_set_metadata(encoder, &metadata)) < HYD_ERROR_START)
@@ -194,8 +260,9 @@ done:
     if (allocator)
         hyd_profiling_allocator_destroy(allocator);
 
-    fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
-        (long long unsigned)profiler.total_alloced, (long long unsigned)profiler.max_alloced);
+    if (!ret)
+        fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
+            (long long unsigned)profiler.total_alloced, (long long unsigned)profiler.max_alloced);
 
     return ret;
 }
