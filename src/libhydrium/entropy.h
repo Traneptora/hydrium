@@ -15,9 +15,9 @@ typedef struct HYDHybridSymbol {
 
 typedef struct HYDAliasEntry {
     size_t count;
-    int16_t *cutoffs;
-    int16_t *offsets;
-    int16_t *original;
+    int32_t *cutoffs;
+    int32_t *offsets;
+    int32_t *original;
 } HYDAliasEntry;
 
 typedef struct HYDHybridUintConfig {
@@ -28,7 +28,7 @@ typedef struct HYDHybridUintConfig {
 
 typedef struct HYDVLCElement {
     int32_t symbol;
-    int length;
+    uint32_t length;
 } HYDVLCElement;
 
 typedef struct HYDEntropyStream {
@@ -42,7 +42,7 @@ typedef struct HYDEntropyStream {
     HYDHybridSymbol *symbols;
     uint16_t max_alphabet_size;
     uint16_t *alphabet_sizes;
-    uint16_t *frequencies;
+    uint32_t *frequencies;
     HYDHybridUintConfig *configs;
     int wrote_stream_header;
 
