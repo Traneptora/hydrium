@@ -12,15 +12,36 @@ static inline int __builtin_clzll(const unsigned long long x) {
 #ifdef _WIN64
     return (int)_lzcnt_u64(x);
 #else
-    return !!unsigned(x >> 32) ? __builtin_clz((unsigned)(x >> 32)) : 32 + __builtin_clz((unsigned)x);
+    return ((unsigned)(x >> 32)) ? __builtin_clz((unsigned)(x >> 32)) : 32 + __builtin_clz((unsigned)x);
 #endif
 }
-#define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll(n))
+#define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll((n)|1))
 #else /* _MSC_VER */
 static inline int hyd_fllog2(unsigned long long n) {
-    #define S(k) if (n >= (1ULL << k)) { i += k; n >>= k; }
-    int i = -(n == 0ULL); S(32); S(16); S(8); S(4); S(2); S(1); return i;
-    #undef S
+    int i = 0;
+    if (n >= (1ULL << 32)) {
+        i += 32;
+        n >>= 32;
+    }
+    if (n >= (1ULL << 16)) {
+        i += 16;
+        n >>= 16;
+    }
+    if (n >= (1ULL << 8)) {
+        i += 8;
+        n >>= 8;
+    }
+    if (n >= (1ULL << 4)) {
+        i += 4;
+        n >>= 4;
+    }
+    if (n >= (1ULL << 2)) {
+        i += 2;
+        n >>= 2;
+    }
+    if (n >= (1ULL << 1))
+        ++i;
+    return i;
 }
 #endif /* _MSC_VER */
 #endif /* __GNUC__ || __clang__ */
@@ -28,6 +49,10 @@ static inline int hyd_fllog2(unsigned long long n) {
 /* ceil(log2(n)) */
 static inline int hyd_cllog2(const unsigned long long n) {
     return hyd_fllog2(n) + !!(n & (n - 1));
+}
+
+static inline int16_t hyd_signed_rshift16(const int16_t v, const int n) {
+    return v >= 0 ? v >> n : -(-v >> n);
 }
 
 /* v / (1 << n) */
@@ -41,7 +66,7 @@ static inline int64_t hyd_signed_rshift64(const int64_t v, const int n) {
 }
 
 static inline uint32_t hyd_pack_signed(const int32_t v) {
-    return (v << 1) ^ -(v < 0);
+    return ((uint32_t)v << 1) ^ -!!(v & UINT32_C(0x80000000));
 }
 
 static const uint32_t br_lut[16] = {

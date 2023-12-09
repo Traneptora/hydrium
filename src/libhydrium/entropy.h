@@ -50,7 +50,9 @@ typedef struct HYDEntropyStream {
     uint32_t lz77_min_length;
     uint32_t lz77_min_symbol;
     uint32_t last_symbol;
+    uint32_t last_dist;
     uint32_t lz77_rle_count;
+    int modular;
 
     // prefix only
     HYDVLCElement *vlc_table;
@@ -61,7 +63,7 @@ typedef struct HYDEntropyStream {
 
 HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
                                       size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
-                                      int custom_configs, uint32_t lz77_min_symbol);
+                                      int custom_configs, uint32_t lz77_min_symbol, int modular);
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
                                             int split_exponent, int msb_in_token, int lsb_in_token);
 HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uint32_t symbol);
