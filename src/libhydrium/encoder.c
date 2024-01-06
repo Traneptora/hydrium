@@ -308,6 +308,7 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
                                 encoder->metadata.height - encoder->lf_group[id].lf_group_y * h : h;
         encoder->lf_group[id].lf_varblock_width = (encoder->lf_group[id].lf_group_width + 7) >> 3;
         encoder->lf_group[id].lf_varblock_height = (encoder->lf_group[id].lf_group_height + 7) >> 3;
+        encoder->lf_group[id].stride = encoder->lf_group[id].lf_varblock_width << 3;
     }
 
     if (encoder->writer.overflow_state)
@@ -393,15 +394,15 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group, c
         const int c = i < 2 ? 1 - i : i;
         for (size_t vy = 0; vy < lf_group->lf_varblock_height; vy++) {
             const size_t y = vy << 3;
-            const size_t row = lf_group->lf_group_width * y;
+            const size_t row = lf_group->stride * y;
             int32_t prev_vp = 0;
             for (size_t vx = 0; vx < lf_group->lf_varblock_width; vx++) {
                 const size_t x = vx << 3;
                 int16_t *xyb = encoder->xyb + ((row + x) * 3 + c);
                 *xyb = shift[c] >= 0 ? *xyb * (UINT16_C(1) << shift[c]) : hyd_signed_rshift16(*xyb, -shift[c]);
-                int32_t w = x > 0 ? *(xyb - 24) : y > 0 ? *(xyb - 24 * lf_group->lf_group_width) : 0;
-                int32_t n = y > 0 ? *(xyb - 24 * lf_group->lf_group_width) : w;
-                int32_t nw = x > 0 && y > 0 ? *(xyb - 24 * (lf_group->lf_group_width + 1)) : w;
+                int32_t w = x > 0 ? *(xyb - 24) : y > 0 ? *(xyb - 24 * lf_group->stride) : 0;
+                int32_t n = y > 0 ? *(xyb - 24 * lf_group->stride) : w;
+                int32_t nw = x > 0 && y > 0 ? *(xyb - 24 * (lf_group->stride + 1)) : w;
                 int32_t vp = w + n - nw;
                 int32_t min = hyd_min(w, n);
                 int32_t max = hyd_max(w, n);
@@ -453,7 +454,7 @@ static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
                 memset(scratchblock, 0, sizeof(scratchblock));
                 size_t vx = bx << 3;
                 for (size_t y = 0; y < 8; y++) {
-                    const size_t posy = (vy + y) * lf_group->lf_group_width + vx;
+                    const size_t posy = (vy + y) * lf_group->stride + vx;
                     scratchblock[0][y][0] = encoder->xyb[posy * 3 + c];
                     for (size_t x = 1; x < 8; x++)
                         scratchblock[0][y][0] += encoder->xyb[(posy + x) * 3 + c];
@@ -476,7 +477,7 @@ static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
                     }
                 }
                 for (size_t y = 0; y < 8; y++) {
-                    size_t posy = (vy + y) * lf_group->lf_group_width + vx;
+                    size_t posy = (vy + y) * lf_group->stride + vx;
                     for (size_t x = 0; x < 8; x++)
                         encoder->xyb[(posy + x) * 3 + c] = scratchblock[1][x][y];
                 }
@@ -513,16 +514,14 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                                           size_t num_non_zeroes, size_t *symbol_count, uint8_t *non_zeroes) {
     HYDStatusCode ret;
     size_t gindex = 0;
-    const size_t padded_w = lf_group->lf_varblock_width << 3;
-    const size_t padded_h = lf_group->lf_varblock_height << 3;
     for (size_t gy = 0; gy < lf_group->tile_count_y; gy++) {
-        if (gy << 8 >= padded_h)
+        if (gy << 8 >= lf_group->lf_group_height)
             break;
         const size_t gh = (gy + 1) << 8 > lf_group->lf_group_height ?
             lf_group->lf_group_height - (gy << 8) : 256;
         const size_t gbh = (gh + 7) >> 3;
         for (size_t gx = 0; gx < lf_group->tile_count_x; gx++) {
-            if (gx << 8 >= padded_w)
+            if (gx << 8 >= lf_group->lf_group_width)
                 break;
             const size_t gw = (gx + 1) << 8 > lf_group->lf_group_width ?
                 lf_group->lf_group_width - (gx << 8) : 256;
@@ -547,8 +546,8 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                         for (int k = 0; k < 63; k++) {
                             IntPos pos = natural_order[k + 1];
                             IntPos prev_pos = natural_order[k];
-                            const size_t prev_pos_s = (vy + prev_pos.y) * padded_w + (vx + prev_pos.x);
-                            const size_t pos_s = (vy + pos.y) * padded_w + (vx + pos.x);
+                            const size_t prev_pos_s = (vy + prev_pos.y) * lf_group->stride + (vx + prev_pos.x);
+                            const size_t pos_s = (vy + pos.y) * lf_group->stride + (vx + pos.x);
                             int prev = k ? !!encoder->xyb[prev_pos_s * 3 + c] : non_zero_count <= 4;
                             size_t coeff_context = hist_context + prev +
                                 ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k + 1]) << 1);

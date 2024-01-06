@@ -54,7 +54,7 @@ static void rgb_to_xyb(HYDEncoder *encoder, const size_t off, const int64_t r, c
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *const buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id) {
     for (size_t y = 0; y < encoder->lf_group[lf_group_id].lf_group_height; y++) {
         const ptrdiff_t y_off = y * row_stride;
-        const size_t row = y * encoder->lf_group[lf_group_id].lf_group_width;
+        const size_t row = y * encoder->lf_group[lf_group_id].stride;
         for (size_t x = 0; x < encoder->lf_group[lf_group_id].lf_group_width; x++) {
             const ptrdiff_t offset = y_off + x * pixel_stride;
             rgb_to_xyb(encoder, row + x, buffer[0][offset], buffer[1][offset], buffer[2][offset]);
@@ -67,7 +67,7 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const uint16_t *const
 HYDStatusCode hyd_populate_xyb_buffer8(HYDEncoder *encoder, const uint8_t *const buffer[3], ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id) {
     for (size_t y = 0; y < encoder->lf_group[lf_group_id].lf_group_height; y++) {
         const ptrdiff_t y_off = y * row_stride;
-        const size_t row = y * encoder->lf_group[lf_group_id].lf_group_width;
+        const size_t row = y * encoder->lf_group[lf_group_id].stride;
         for (size_t x = 0; x < encoder->lf_group[lf_group_id].lf_group_width; x++) {
             const ptrdiff_t offset = y_off + x * pixel_stride;
             rgb_to_xyb(encoder, row + x, buffer[0][offset] * UINT64_C(257), buffer[1][offset] * UINT64_C(257),

@@ -17,6 +17,7 @@ typedef struct HYDLFGroup {
     size_t lf_group_height;
     size_t lf_varblock_width;
     size_t lf_varblock_height;
+    size_t stride;
 } HYDLFGroup;
 
 /* opaque structure */
