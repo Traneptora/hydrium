@@ -324,10 +324,11 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     }
 
     size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
-    encoder->xyb = hyd_reallocarray(&encoder->allocator, encoder->xyb, encoder->lf_group[lfid].lf_group_height * encoder->lf_group[lfid].lf_group_width, 
-        3 * sizeof(int16_t));
-    if (!encoder->xyb)
+    size_t xyb_pixels = encoder->lf_group[lfid].lf_varblock_height * encoder->lf_group[lfid].lf_varblock_width * 64;
+    int16_t *temp_xyb = hyd_reallocarray(&encoder->allocator, encoder->xyb, 3 * xyb_pixels, sizeof(int16_t));
+    if (!temp_xyb)
         return HYD_NOMEM;
+    encoder->xyb = temp_xyb;
 
     return HYD_OK;
 }
@@ -512,14 +513,16 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                                           size_t num_non_zeroes, size_t *symbol_count, uint8_t *non_zeroes) {
     HYDStatusCode ret;
     size_t gindex = 0;
+    const size_t padded_w = lf_group->lf_varblock_width << 3;
+    const size_t padded_h = lf_group->lf_varblock_height << 3;
     for (size_t gy = 0; gy < lf_group->tile_count_y; gy++) {
-        if (gy << 8 >= lf_group->lf_group_height)
+        if (gy << 8 >= padded_h)
             break;
         const size_t gh = (gy + 1) << 8 > lf_group->lf_group_height ?
             lf_group->lf_group_height - (gy << 8) : 256;
         const size_t gbh = (gh + 7) >> 3;
         for (size_t gx = 0; gx < lf_group->tile_count_x; gx++) {
-            if (gx << 8 >= lf_group->lf_group_width)
+            if (gx << 8 >= padded_w)
                 break;
             const size_t gw = (gx + 1) << 8 > lf_group->lf_group_width ?
                 lf_group->lf_group_width - (gx << 8) : 256;
@@ -544,8 +547,8 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                         for (int k = 0; k < 63; k++) {
                             IntPos pos = natural_order[k + 1];
                             IntPos prev_pos = natural_order[k];
-                            const size_t prev_pos_s = (vy + prev_pos.y) * lf_group->lf_group_width + (vx + prev_pos.x);
-                            const size_t pos_s = (vy + pos.y) * lf_group->lf_group_width + (vx + pos.x);
+                            const size_t prev_pos_s = (vy + prev_pos.y) * padded_w + (vx + prev_pos.x);
+                            const size_t pos_s = (vy + pos.y) * padded_w + (vx + pos.x);
                             int prev = k ? !!encoder->xyb[prev_pos_s * 3 + c] : non_zero_count <= 4;
                             size_t coeff_context = hist_context + prev +
                                 ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k + 1]) << 1);
@@ -655,22 +658,23 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
 
     size_t non_zero_count = 0;
     size_t gindex = 0;
+    const size_t lf_pad_w = lf_group->lf_varblock_width << 3;
     for (size_t gy = 0; gy < lf_group->tile_count_y; gy++) {
-        if (gy << 8 >= lf_group->lf_group_height)
+        if (gy << 5 >= lf_group->lf_varblock_height)
             break;
         const size_t gh = ((gy + 1) << 8) > lf_group->lf_group_height ?
             lf_group->lf_group_height - (gy << 8) : 256;
         const size_t gbh = (gh + 7) >> 3;
         for (size_t gx = 0; gx < lf_group->tile_count_x; gx++) {
-            if (gx << 8 >= lf_group->lf_group_width)
+            if (gx << 5 >= lf_group->lf_varblock_width)
                 break;
             const size_t gw = (gx + 1) << 8 > lf_group->lf_group_width ?
                 lf_group->lf_group_width - (gx << 8) : 256;
             const size_t gbw = (gw + 7) >> 3;
             for (size_t by = 0; by < gbh; by++) {
                 const size_t vy = (by << 3) + (gy << 8);
-                const size_t vy7 = (vy + 7) * lf_group->lf_group_width;
-                const size_t vy6 = (vy + 6) * lf_group->lf_group_width;
+                const size_t vy7 = (vy + 7) * lf_pad_w;
+                const size_t vy6 = (vy + 6) * lf_pad_w;
                 for (size_t bx = 0; bx < gbw; bx++) {
                     const size_t vx = (bx << 3) + (gx << 8);
                     const uint32_t hf = (((((encoder->xyb[3 * (vy7 + vx + 7) + 1] & UINT32_C(0x7FFF))
@@ -687,7 +691,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
                         for (int j = 1; j < 64; j++) {
                             const size_t py = vy + natural_order[j].y;
                             const size_t px = vx + natural_order[j].x;
-                            int16_t *xyb = encoder->xyb + ((py * lf_group->lf_group_width + px) * 3 + i);
+                            int16_t *xyb = encoder->xyb + ((py * lf_pad_w + px) * 3 + i);
                             *xyb = hf_quant(*xyb, hf_quant_weights[i][j], hf_mult[hf_mult_pos]);
                             if (*xyb) {
                                 non_zeroes[((gindex << 10) + by * gbw + bx) * 3 + i]++;
