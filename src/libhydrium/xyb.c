@@ -5,7 +5,7 @@
 #include "math-functions.h"
 #include "xyb.h"
 
-static int64_t linearize(const int64_t srgb) {
+static inline int64_t linearize(const int64_t srgb) {
     if (srgb <= 2650)
         return (srgb * UINT64_C(332427809)) >> 32;
     const uint64_t prepow = (srgb + 3604) * UINT64_C(4071059048);
@@ -18,7 +18,7 @@ static int64_t linearize(const int64_t srgb) {
     return (((prepow_s * prepow_s) >> 16) * postpow) >> 16;
 }
 
-static uint64_t icbrt(uint64_t x) {
+static inline uint64_t icbrt(uint64_t x) {
     uint64_t y = 0;
     for (int s = 63; s >= 0; s -= 3) {
         y <<= 1;
@@ -32,7 +32,7 @@ static uint64_t icbrt(uint64_t x) {
     return y;
 }
 
-static int64_t pow_one_third(int64_t mix) {
+static inline int64_t pow_one_third(const int64_t mix) {
     if (mix < 0)
         return -pow_one_third(-mix);
     return icbrt(((uint64_t)mix) << 32);
