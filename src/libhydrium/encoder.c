@@ -221,8 +221,8 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
         const uint32_t cpos[4] = {0, 256, 2304, 18688};
         const uint32_t upos[4] = {8, 11, 14, 30};
         // have_crop ==> !encoder->one_frame
-        size_t frame_w = encoder->lf_group->tile_count_x << 3;
-        size_t frame_h = encoder->lf_group->tile_count_y << 3;
+        size_t frame_w = encoder->lf_group->tile_count_x << 8;
+        size_t frame_h = encoder->lf_group->tile_count_y << 8;
         hyd_write_u32(bw, cpos, upos, hyd_pack_signed(encoder->lf_group->lf_group_x * frame_w));
         hyd_write_u32(bw, cpos, upos, hyd_pack_signed(encoder->lf_group->lf_group_y * frame_h));
         hyd_write_u32(bw, cpos, upos, encoder->lf_group->lf_group_width);
