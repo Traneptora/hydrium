@@ -70,8 +70,10 @@ void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
 
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
                                             int split_exponent, int msb_in_token, int lsb_in_token) {
-    if (to_cluster && min_cluster >= to_cluster)
+    if (to_cluster && min_cluster >= to_cluster) {
+        *stream->error = "min_cluster >= to_cluster";
         return HYD_INTERNAL_ERROR;
+    }
 
     for (uint8_t j = min_cluster; (!to_cluster || j < to_cluster) && j < stream->num_clusters; j++) {
         stream->configs[j].split_exponent = split_exponent;
@@ -106,7 +108,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
     // use mtf = true
     hyd_write_bool(bw, 1);
     ret = hyd_entropy_init_stream(&nested, stream->allocator, bw, stream->num_dists, (const uint8_t[]){0},
-        1, 1, 64, 0);
+        1, 1, 64, 0, stream->error);
     if (ret < HYD_ERROR_START)
         goto fail;
     if ((ret = hyd_entropy_set_hybrid_config(&nested, 0, 0, 4, 1, 0)) < HYD_ERROR_START)
@@ -190,8 +192,10 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
             underfull[underfull_pos++] = i;
 
         while (overfull_pos) {
-            if (!underfull_pos)
+            if (!underfull_pos) {
+                *stream->error = "empty underfull during alias table gen";
                 return HYD_INTERNAL_ERROR;
+            }
             uint8_t u = underfull[--underfull_pos];
             uint8_t o = overfull[--overfull_pos];
             int32_t by = bucket_size - cutoffs[u];
@@ -314,10 +318,12 @@ static int32_t write_ans_frequencies(HYDEntropyStream *stream, uint32_t *frequen
 
 HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
                                   size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
-                                  int custom_configs, uint32_t lz77_min_symbol, int modular) {
+                                  int custom_configs, uint32_t lz77_min_symbol, int modular, const char **error) {
     HYDStatusCode ret;
     memset(stream, 0, sizeof(HYDEntropyStream));
+    stream->error = error;
     if (!num_dists || !symbol_count) {
+        *stream->error = "zero dist count or zero symbol count";
         ret = HYD_INTERNAL_ERROR;
         goto fail;
     }
@@ -343,6 +349,7 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *al
             stream->num_clusters = stream->cluster_map[i] + 1;
     }
     if (stream->num_clusters > num_dists) {
+        *stream->error = "more clusters than dists";
         ret = HYD_INTERNAL_ERROR;
         goto fail;
     }
@@ -535,9 +542,10 @@ static int32_t collect(FrequencyEntry *entry) {
     return entry->max_depth = hyd_max3(self, left, right);
 }
 
-static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint32_t *frequencies,
+static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t *frequencies,
                                         uint32_t *lengths, uint32_t alphabet_size, int32_t max_depth) {
     HYDStatusCode ret = HYD_OK;
+    HYDAllocator *allocator = stream->allocator;
     FrequencyEntry *tree = hyd_calloc(allocator, (2 * alphabet_size - 1), sizeof(FrequencyEntry));
     if (!tree) {
         ret = HYD_NOMEM;
@@ -560,7 +568,7 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint32_t 
         int32_t nz = 0;
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++)
             nz += !!tree[j].frequency;
-        int32_t target = max_depth - (nz > 1 ? hyd_cllog2(nz - 1) : 0);
+        int32_t target = max_depth - (nz > 1 ? hyd_fllog2(nz - 1) : 0);
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
             if (tree[j].max_depth >= target)
                 continue;
@@ -572,6 +580,7 @@ static HYDStatusCode build_huffman_tree(HYDAllocator *allocator, const uint32_t 
             }
         }
         if (!smallest || !second) {
+            *stream->error = "empty smallest or second smallest";
             ret = HYD_INTERNAL_ERROR;
             goto end;
         }
@@ -598,9 +607,10 @@ end:
     return ret;
 }
 
-static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *table,
+static HYDStatusCode build_prefix_table(HYDEntropyStream *stream, HYDVLCElement *table,
                                         const uint32_t *lengths, uint32_t alphabet_size) {
     HYDStatusCode ret = HYD_OK;
+    HYDAllocator *allocator = stream->allocator;
     HYDVLCElement *pre_table = hyd_mallocarray(allocator, alphabet_size, sizeof(HYDVLCElement));
     if (!pre_table)
         return HYD_NOMEM;
@@ -622,8 +632,10 @@ static HYDStatusCode build_prefix_table(HYDAllocator *allocator, HYDVLCElement *
         code += UINT64_C(1) << (32 - pre_table[j].length);
     }
 
-    if (code && code != (UINT64_C(1) << 32))
+    if (code && code != (UINT64_C(1) << 32)) {
+        *stream->error = "VLC codes do not add up";
         ret = HYD_INTERNAL_ERROR;
+    }
 
     hyd_free(allocator, pre_table);
     return ret;
@@ -682,7 +694,7 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
     }
 
     uint32_t level1_lengths[18] = { 0 };
-    ret = build_huffman_tree(stream->allocator, level1_freqs, level1_lengths, 18, 5);
+    ret = build_huffman_tree(stream, level1_freqs, level1_lengths, 18, 5);
     if (ret < HYD_ERROR_START)
         goto end;
 
@@ -697,6 +709,7 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
             break;
     }
     if (total_code && total_code != 32) {
+        *stream->error = "level1 code total mismatch";
         ret = HYD_INTERNAL_ERROR;
         goto end;
     }
@@ -707,7 +720,7 @@ static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint
         goto end;
     }
 
-    ret = build_prefix_table(stream->allocator, level1_table, level1_lengths, 18);
+    ret = build_prefix_table(stream, level1_table, level1_lengths, 18);
     if (ret < HYD_ERROR_START)
         goto end;
 
@@ -768,7 +781,7 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
         uint32_t *lengths = global_lengths + i * stream->max_alphabet_size;
         const uint32_t *freqs = stream->frequencies + i * stream->max_alphabet_size;
 
-        ret = build_huffman_tree(stream->allocator, freqs, lengths, stream->alphabet_sizes[i], 15);
+        ret = build_huffman_tree(stream, freqs, lengths, stream->alphabet_sizes[i], 15);
         if (ret < HYD_ERROR_START)
             goto fail;
         uint32_t nsym = 0;
@@ -809,7 +822,7 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
     for (size_t i = 0; i < stream->num_clusters; i++) {
         HYDVLCElement *table = stream->vlc_table + i * stream->max_alphabet_size;
         const uint32_t *lengths = global_lengths + i * stream->max_alphabet_size;
-        ret = build_prefix_table(stream->allocator, table, lengths, stream->alphabet_sizes[i]);
+        ret = build_prefix_table(stream, table, lengths, stream->alphabet_sizes[i]);
         if (ret < HYD_ERROR_START)
             goto fail;
     }
@@ -872,8 +885,10 @@ fail:
 HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count) {
     HYDBitWriter *bw = stream->bw;
 
-    if (symbol_count + symbol_start > stream->symbol_pos)
+    if (symbol_count + symbol_start > stream->symbol_pos) {
+        *stream->error = "symbol out of bounds";
         return HYD_INTERNAL_ERROR;
+    }
 
     const HYDHybridSymbol *symbols = stream->symbols + symbol_start;
     for (size_t p = 0; p < symbol_count; p++) {
@@ -941,11 +956,13 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
     const uint32_t log_bucket_size = 12 - log_alphabet_size;
     const uint32_t pos_mask = ~(~UINT32_C(0) << log_bucket_size);
     if (!stream->alias_table) {
+        *stream->error = "alias table never generated";
         ret = HYD_INTERNAL_ERROR;
         goto end;
     }
 
     if (symbol_count + symbol_start > stream->symbol_pos) {
+        *stream->error = "symbol out of bounds during ans flush";
         ret = HYD_INTERNAL_ERROR;
         goto end;
     }
@@ -981,6 +998,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
             }
         }
         if (j > stream->alias_table[index].count) {
+            *stream->error = "alias table lookup failed";
             ret = HYD_INTERNAL_ERROR;
             goto end;
         }

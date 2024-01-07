@@ -50,6 +50,8 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
+    if (!encoder)
+        return HYD_OK;
     hyd_free(&encoder->allocator, encoder->working_writer.buffer);
     hyd_free(&encoder->allocator, encoder->xyb);
     hyd_free(&encoder->allocator, encoder->lf_group);
@@ -58,23 +60,37 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImageMetadata *metadata) {
-    if (!metadata->width || !metadata->height)
+    HYDStatusCode ret = HYD_OK;
+    if (!metadata->width || !metadata->height) {
+        encoder->error = "invalid zero-width or zero-height";
         return HYD_API_ERROR;
+    }
     const uint64_t width64 = metadata->width;
     const uint64_t height64 = metadata->height;
-    if (width64 > UINT64_C(1) << 30 || height64 > UINT64_C(1) << 30)
+    if (width64 > UINT64_C(1) << 30 || height64 > UINT64_C(1) << 30) {
+        encoder->error = "width or height out of bounds";
         return HYD_API_ERROR;
+    }
+
     /* won't overflow due to above check */
-    if (width64 * height64 > UINT64_C(1) << 40)
+    if (width64 * height64 > UINT64_C(1) << 40) {
+        encoder->error = "width times height out of bounds";
         return HYD_API_ERROR;
+    }
+
     encoder->metadata = *metadata;
+
     if (width64 > (1 << 20) || height64 > (1 << 20) || width64 * height64 > (1 << 28))
         encoder->level10 = 1;
 
-    if (metadata->tile_size_shift_x < -1 || metadata->tile_size_shift_x > 3)
+    if (metadata->tile_size_shift_x < -1 || metadata->tile_size_shift_x > 3) {
+        encoder->error = "tile_size_shift_y must be between -1 and 3";
         return HYD_API_ERROR;
-    if (metadata->tile_size_shift_y < -1 || metadata->tile_size_shift_y > 3)
+    }
+    if (metadata->tile_size_shift_y < -1 || metadata->tile_size_shift_y > 3) {
+        encoder->error = "tile_size_shift_y must be between -1 and 3";
         return HYD_API_ERROR;
+    }
 
     encoder->one_frame = metadata->tile_size_shift_x < 0 || metadata->tile_size_shift_y < 0;
     encoder->lf_group_count_x = (metadata->width + 2047) >> 11;
@@ -86,13 +102,10 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
 
     if (encoder->one_frame) {
         for (size_t y = 0; y < encoder->lf_group_count_y; y++) {
-            const size_t row = y * encoder->lf_group_count_x;
             for (size_t x = 0; x < encoder->lf_group_count_x; x++) {
-                HYDLFGroup *lf_group = &encoder->lf_group[row + x];
-                lf_group->tile_count_x = 8;
-                lf_group->tile_count_y = 8;
-                lf_group->lf_group_x = x;
-                lf_group->lf_group_y = y;
+                ret = hyd_populate_lf_group(encoder, NULL, x, y);
+                if (ret < HYD_ERROR_START)
+                    return ret;
             }
         }
     } else {
@@ -136,4 +149,8 @@ HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
         return HYD_OK;
 
     return HYD_NEED_MORE_OUTPUT;
+}
+
+HYDRIUM_EXPORT const char *hyd_error_message_get(HYDEncoder *encoder) {
+    return encoder->error;
 }

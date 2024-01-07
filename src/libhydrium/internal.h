@@ -53,6 +53,10 @@ struct HYDEncoder {
     size_t *hf_stream_barrier;
 
     size_t groups_encoded;
+
+    const char *error;
 };
+
+HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group, uint32_t tile_x, uint32_t tile_y);
 
 #endif /* HYDRIUM_INTERNAL_H_ */

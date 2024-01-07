@@ -125,5 +125,7 @@ HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *prof
 }
 
 HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator) {
+    if (!allocator)
+        return;
     allocator->free_func(allocator, allocator->opaque);
 }

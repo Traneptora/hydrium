@@ -279,4 +279,11 @@ HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *prof
  */
 HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator);
 
+/**
+ * @brief Returns a string description of the last error that occurred.
+ *
+ * @param encoder A HYDEncoder struct.
+ */
+HYDRIUM_EXPORT const char *hyd_error_message_get(HYDEncoder *encoder);
+
 #endif /* HYDRIUM_H_ */

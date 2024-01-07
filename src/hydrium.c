@@ -37,6 +37,7 @@ int main(int argc, const char *argv[]) {
     int ret = 1;
     FILE *fp = stdout, *fin = stdin;
     HYDMemoryProfiler profiler = { 0 };
+    const char *error_msg = NULL;
 
     fprintf(stderr, "libhydrium version %s\n", HYDRIUM_VERSION_STRING);
 
@@ -252,15 +253,17 @@ done:
         fclose(fin);
     if (spng_context)
         spng_ctx_free(spng_context);
-    if (encoder)
-        hyd_encoder_destroy(encoder);
+    error_msg = hyd_error_message_get(encoder);
+    hyd_encoder_destroy(encoder);
     if (buffer)
         free(buffer);
     if (output_buffer)
         free(output_buffer);
-    if (allocator)
-        hyd_profiling_allocator_destroy(allocator);
-
+    hyd_profiling_allocator_destroy(allocator);
+    if (ret < HYD_ERROR_START)
+        fprintf(stderr, "Hydrium error occurred. Error code: %d\n", ret);
+    if (error_msg && *error_msg)
+        fprintf(stderr, "Error message: %s\n", error_msg);
     if (!ret)
         fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
             (long long unsigned)profiler.total_alloced, (long long unsigned)profiler.max_alloced);
