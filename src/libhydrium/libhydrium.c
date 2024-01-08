@@ -119,8 +119,10 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len) {
-    if (buffer_len < 64)
+    if (buffer_len < 64) {
+        encoder->error = "provided buffer must be at least 64 bytes long";
         return HYD_API_ERROR;
+    }
     encoder->out = buffer;
     encoder->out_len = buffer_len;
     encoder->out_pos = 0;
