@@ -2,7 +2,7 @@
  * Hydrium basic implementation
  */
 
-#ifdef MSC_VER
+#ifdef _MSC_VER
     #include <io.h>
     #define hyd_isatty(f) _isatty(_fileno(f))
 #else
