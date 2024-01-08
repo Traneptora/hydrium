@@ -80,6 +80,7 @@ static inline uint32_t hyd_bitswap32(const uint32_t b) {
     return c;
 }
 
+#define hyd_array_size(a) (sizeof((a))/sizeof(*(a)))
 #define hyd_max(a, b) ((a) > (b) ? (a) : (b))
 #define hyd_min(a, b) ((a) < (b) ? (a) : (b))
 #define hyd_clamp(v, min, max) ((v) < (min) ? (min) : (v) > (max) ? (max) : (v))
