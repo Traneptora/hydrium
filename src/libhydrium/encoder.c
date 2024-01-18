@@ -304,8 +304,6 @@ HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group_p
         return HYD_API_ERROR;
     }
 
-    encoder->last_tile = (tile_x + 1) * w >= encoder->metadata.width && (tile_y + 1) * h >= encoder->metadata.height;
-
     HYDLFGroup *lf_group = &encoder->lf_group[encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0];
     lf_group->lf_group_x = tile_x;
     lf_group->lf_group_y = tile_y;
@@ -329,13 +327,18 @@ HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group_p
     return HYD_OK;
 }
 
-static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t tile_y) {
+static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t tile_y, int is_last) {
     HYDStatusCode ret;
 
     HYDLFGroup *lf_group = NULL;
     ret = hyd_populate_lf_group(encoder, &lf_group, tile_x, tile_y);
     if (ret < HYD_ERROR_START)
         return ret;
+
+    encoder->last_tile = is_last < 0 ?
+        (tile_x + 1) * (lf_group->tile_count_x << 8) >= encoder->metadata.width &&
+        (tile_y + 1) * (lf_group->tile_count_y << 8) >= encoder->metadata.height
+        : is_last;
 
     if (encoder->writer.overflow_state)
         return encoder->writer.overflow_state;
@@ -843,9 +846,9 @@ end:
 
 HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3],
                                            uint32_t tile_x, uint32_t tile_y,
-                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last) {
     HYDStatusCode ret;
-    if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < HYD_ERROR_START)
+    if ((ret = send_tile_pre(encoder, tile_x, tile_y, is_last)) < HYD_ERROR_START)
         return ret;
 
     size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
@@ -858,9 +861,9 @@ HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *
 
 HYDRIUM_EXPORT HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3],
                                             uint32_t tile_x, uint32_t tile_y,
-                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride) {
+                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last) {
     HYDStatusCode ret;
-    if ((ret = send_tile_pre(encoder, tile_x, tile_y)) < HYD_ERROR_START)
+    if ((ret = send_tile_pre(encoder, tile_x, tile_y, is_last)) < HYD_ERROR_START)
         return ret;
 
     size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;

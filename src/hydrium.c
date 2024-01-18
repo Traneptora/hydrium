@@ -226,11 +226,11 @@ int main(int argc, const char *argv[]) {
                 const uint16_t *tile_buffer = ((const uint16_t *)buffer) + x * tile_size_x * 4;
                 const uint16_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
                 // We divide by 2 because spng_stride is in bytes, not in uint16_t units
-                ret = hyd_send_tile(encoder, rgb, x, y, spng_stride / 2, 4);
+                ret = hyd_send_tile(encoder, rgb, x, y, spng_stride / 2, 4, -1);
             } else {
                 const uint8_t *tile_buffer = ((const uint8_t *)buffer) + x * tile_size_x * 3;
                 const uint8_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
-                ret = hyd_send_tile8(encoder, rgb, x, y, spng_stride, 3);
+                ret = hyd_send_tile8(encoder, rgb, x, y, spng_stride, 3, -1);
             }
             if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
                 goto done;

@@ -225,7 +225,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3],
                                            uint32_t tile_x, uint32_t tile_y,
-                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride);
+                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last);
 
 /**
  * @brief A convenience function to send 8-bit pixel data instead of 16-bit pixel data. Each sample
@@ -235,7 +235,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3],
                                             uint32_t tile_x, uint32_t tile_y,
-                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride);
+                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last);
 
 
 /**
