@@ -51,20 +51,6 @@ static inline int hyd_cllog2(const unsigned long long n) {
     return hyd_fllog2(n) + !!(n & (n - 1));
 }
 
-static inline int16_t hyd_signed_rshift16(const int16_t v, const int n) {
-    return v >= 0 ? v >> n : -(-v >> n);
-}
-
-/* v / (1 << n) */
-static inline int32_t hyd_signed_rshift32(const int32_t v, const int n) {
-    return v >= 0 ? v >> n : -(-v >> n);
-}
-
-/* v / (1 << n) */
-static inline int64_t hyd_signed_rshift64(const int64_t v, const int n) {
-    return v >= 0 ? v >> n : -(-v >> n);
-}
-
 static inline uint32_t hyd_pack_signed(const int32_t v) {
     return ((uint32_t)v << 1) ^ -!!(v & UINT32_C(0x80000000));
 }
@@ -80,6 +66,7 @@ static inline uint32_t hyd_bitswap32(const uint32_t b) {
     return c;
 }
 
+#define hyd_abs(a) ((a) < 0 ? -(a) : (a))
 #define hyd_array_size(a) (sizeof((a))/sizeof(*(a)))
 #define hyd_max(a, b) ((a) > (b) ? (a) : (b))
 #define hyd_min(a, b) ((a) < (b) ? (a) : (b))

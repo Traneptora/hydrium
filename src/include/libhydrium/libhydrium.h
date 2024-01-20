@@ -15,8 +15,8 @@
  * 0x1XXXYYYZZZ where XXX is the major version, YYY is the minor version,
  * and ZZZ is the point release.
  */
-#define HYDRIUM_VERSION_INT 0x1000003000
-#define HYDRIUM_VERSION_STRING "0.3.0"
+#define HYDRIUM_VERSION_INT 0x1000004000
+#define HYDRIUM_VERSION_STRING "0.4.0"
 
 #ifdef _WIN32
     #ifdef HYDRIUM_INTERNAL_BUILD
@@ -67,6 +67,12 @@ typedef enum HYDStatusCode {
      */
     HYD_INTERNAL_ERROR = -15,
 } HYDStatusCode;
+
+typedef enum HYDSampleFormat {
+    HYD_UINT8,
+    HYD_UINT16,
+    HYD_FLOAT32,
+} HYDSampleFormat;
 
 typedef struct HYDAllocator {
     void *opaque;
@@ -168,7 +174,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
 HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len);
 
 /**
- * @brief Provide a buffer of 16-bit RGB pixel data to the hydrium encoder for it to encode.
+ * @brief Provide a buffer of RGB pixel data to the hydrium encoder for it to encode.
  *
  * By default, hydrium encodes one tile at a time, and no tile references any other tile. A tile is 256x256,
  * unless tile_size_shift_x and/or tile_size_shift_y are set to something positive. In that case, the size of a
@@ -223,20 +229,9 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  * @param row_stride The line size of the pixel buffer.
  * @param pixel_stride The inter-pixel stride of the buffer.
  */
-HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3],
-                                           uint32_t tile_x, uint32_t tile_y,
-                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last);
-
-/**
- * @brief A convenience function to send 8-bit pixel data instead of 16-bit pixel data. Each sample
- * will be multiplied by 257. (65535 = 255 * 257)
- *
- * @see hyd_send_tile
- */
-HYDRIUM_EXPORT HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3],
-                                            uint32_t tile_x, uint32_t tile_y,
-                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last);
-
+HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const void *const buffer[3],
+                                           uint32_t tile_x, uint32_t tile_y, ptrdiff_t row_stride,
+                                           ptrdiff_t pixel_stride, int is_last, HYDSampleFormat sample_fmt);
 
 /**
  * @brief Release the output buffer that was previously provided by hyd_provide_output_buffer.

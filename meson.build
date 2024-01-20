@@ -1,6 +1,6 @@
 project('hydrium', 'c',
     license: ['BSD-2-Clause'],
-    version : '0.3.0',
+    version : '0.4.0',
     default_options: [
         'buildtype=minsize',
         'c_std=c99',
@@ -38,7 +38,6 @@ libhydrium_sources = files(
     'src/libhydrium/entropy.c',
     'src/libhydrium/libhydrium.c',
     'src/libhydrium/memory.c',
-    'src/libhydrium/xyb.c',
 )
 
 hydrium_sources = files(
@@ -47,6 +46,8 @@ hydrium_sources = files(
 
 libhydrium_includes = include_directories('src/include')
 
+m_dep = cc.find_library('m')
+
 libhydrium = library('hydrium',
     sources: libhydrium_sources,
     soversion : '0',
@@ -54,10 +55,11 @@ libhydrium = library('hydrium',
     link_args: ldflags,
     install: true,
     include_directories: libhydrium_includes,
+    dependencies: [m_dep],
 )
 
 libhydrium_dep = declare_dependency(include_directories: libhydrium_includes, link_with: libhydrium)
-libspng_dep = dependency('spng', fallback : ['spng', 'spng_dep'], default_options: ['default_library=static'])
+libspng_dep = dependency('spng', fallback : ['spng', 'spng_dep'])
 
 hydrium = executable('hydrium',
     sources: [hydrium_sources],

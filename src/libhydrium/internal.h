@@ -20,13 +20,18 @@ typedef struct HYDLFGroup {
     size_t stride;
 } HYDLFGroup;
 
+typedef union XYBEntry {
+    float f;
+    int32_t i;
+} XYBEntry;
+
 /* opaque structure */
 struct HYDEncoder {
     HYDAllocator allocator;
     HYDImageMetadata metadata;
     HYDEntropyStream hf_stream;
 
-    int16_t *xyb;
+    XYBEntry *xyb;
 
     int one_frame;
     int last_tile;
