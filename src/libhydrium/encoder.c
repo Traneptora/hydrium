@@ -1,6 +1,7 @@
 /*
  * Base encoder implementation
  */
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -10,7 +11,6 @@
 #include "internal.h"
 #include "math-functions.h"
 #include "memory.h"
-#include "xyb.h"
 
 typedef struct IntPos {
     uint8_t x, y;
@@ -31,7 +31,7 @@ static const float cosine_lut[7][8] = {
     {0.146984, -0.0344874, -0.17338, -0.0982119, 0.0982119, 0.17338, 0.0344874, -0.146984},
     {0.125, -0.125, -0.125, 0.125, 0.125, -0.125, -0.125, 0.125},
     {0.0982119, -0.17338, 0.0344874, 0.146984, -0.146984, -0.0344874, 0.17338, -0.0982119},
-    {0.0676495, -0.16332, 0.16332, -0.0676495, -0.0676495, 0.16332, -0.16332, 0.0676495}, 
+    {0.0676495, -0.16332, 0.16332, -0.0676495, -0.0676495, 0.16332, -0.16332, 0.0676495},
     {0.0344874, -0.0982119, 0.146984, -0.17338, 0.17338, -0.146984, 0.0982119, -0.0344874},
 };
 
@@ -647,8 +647,6 @@ static HYDStatusCode encode_end(HYDEncoder *encoder) {
     return ret;
 }
 
-#include <stdio.h>
-
 static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t tile_y) {
     uint8_t *non_zeroes = NULL;
     HYDStatusCode ret = HYD_OK;
@@ -743,7 +741,8 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
         }
     }
 
-    if ((ret = write_lf_group(encoder, lf_group)) < HYD_ERROR_START)
+    ret = write_lf_group(encoder, lf_group);
+    if (ret < HYD_ERROR_START)
         goto end;
 
     if (num_frame_groups > 1) {
@@ -820,34 +819,84 @@ end:
     return ret;
 }
 
-HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const uint16_t *const buffer[3],
-                                           uint32_t tile_x, uint32_t tile_y,
-                                           ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last) {
-    HYDStatusCode ret;
-    ret = send_tile_pre(encoder, tile_x, tile_y, is_last);
-    if (ret < HYD_ERROR_START)
-        return ret;
+static inline float linearize(const float srgb) {
+    if (srgb <= 0.0404482362771082f)
+        return 0.07739938080495357f * srgb;
 
-    size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
-
-    ret = hyd_populate_xyb_buffer(encoder, buffer, row_stride, pixel_stride, lfid);
-    if (ret < HYD_ERROR_START)
-        return ret;
-
-    return encode_xyb_buffer(encoder, tile_x, tile_y);
+    return powf((srgb + 0.055f) * 0.9478672985781991f, 2.4f);
 }
 
-HYDRIUM_EXPORT HYDStatusCode hyd_send_tile8(HYDEncoder *encoder, const uint8_t *const buffer[3],
-                                            uint32_t tile_x, uint32_t tile_y,
-                                            ptrdiff_t row_stride, ptrdiff_t pixel_stride, int is_last) {
+static inline void rgb_to_xyb(const float rgb[3], float *xyb) {
+    const float lgamma = cbrtf(0.3f * rgb[0] + 0.622f * rgb[1] + 0.078f * rgb[2]
+        + 0.0037930732552754493f) - 0.155954f;
+    const float mgamma = cbrtf(0.23f * rgb[0] + 0.692f * rgb[1] + 0.078f * rgb[2]
+        + 0.0037930732552754493f) - 0.155954f;
+    const float sgamma = cbrtf(0.243423f * rgb[0] + 0.204767f * rgb[1] + 0.55181f * rgb[2]
+        + 0.0037930732552754493f) - 0.155954f;
+    xyb[0] = (lgamma - mgamma) * 0.5f;
+    const float y = xyb[1] = (lgamma + mgamma) * 0.5f;
+    /* chroma-from-luma adds B to Y */
+    xyb[2] = sgamma - y;
+}
+
+static HYDStatusCode populate_xyb_buffer(HYDEncoder *encoder, const void *const buffer[3],
+        ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id,
+        HYDSampleFormat sample_fmt) {
+    for (size_t y = 0; y < encoder->lf_group[lf_group_id].lf_group_height; y++) {
+        const ptrdiff_t y_off = y * row_stride;
+        const size_t row = y * encoder->lf_group[lf_group_id].stride;
+        for (size_t x = 0; x < encoder->lf_group[lf_group_id].lf_group_width; x++) {
+            const ptrdiff_t offset = y_off + x * pixel_stride;
+            float rgb[3];
+            switch (sample_fmt) {
+                case HYD_UINT8:
+                    rgb[0] = ((uint8_t *)buffer[0])[offset] * (1.0f / 255.0f);
+                    rgb[1] = ((uint8_t *)buffer[1])[offset] * (1.0f / 255.0f);
+                    rgb[2] = ((uint8_t *)buffer[2])[offset] * (1.0f / 255.0f);
+                    break;
+                case HYD_UINT16:
+                    rgb[0] = ((uint16_t *)buffer[0])[offset] * (1.0f / 65535.0f);
+                    rgb[1] = ((uint16_t *)buffer[1])[offset] * (1.0f / 65535.0f);
+                    rgb[2] = ((uint16_t *)buffer[2])[offset] * (1.0f / 65535.0f);
+                    break;
+                case HYD_FLOAT32:
+                    rgb[0] = ((float *)buffer[0])[offset];
+                    rgb[1] = ((float *)buffer[1])[offset];
+                    rgb[2] = ((float *)buffer[2])[offset];
+                    break;
+                default:
+                    encoder->error = "Invalid Sample Format";
+                    return HYD_INTERNAL_ERROR;
+            }
+            if (!encoder->metadata.linear_light) {
+                rgb[0] = linearize(rgb[0]);
+                rgb[1] = linearize(rgb[1]);
+                rgb[2] = linearize(rgb[2]);
+            }
+            rgb_to_xyb(rgb, &encoder->xyb[3 * (row + x)].f);
+        }
+    }
+
+    return HYD_OK;
+}
+
+HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const void *const buffer[3],
+                                           uint32_t tile_x, uint32_t tile_y, ptrdiff_t row_stride,
+                                           ptrdiff_t pixel_stride, int is_last, HYDSampleFormat sample_fmt) {
     HYDStatusCode ret;
+
+    if (sample_fmt != HYD_UINT8 && sample_fmt != HYD_UINT16 && sample_fmt != HYD_FLOAT32) {
+        encoder->error = "Invalid Sample Format";
+        return HYD_API_ERROR;
+    }
+
     ret = send_tile_pre(encoder, tile_x, tile_y, is_last);
     if (ret < HYD_ERROR_START)
         return ret;
 
     size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
 
-    ret = hyd_populate_xyb_buffer8(encoder, buffer, row_stride, pixel_stride, lfid);
+    ret = populate_xyb_buffer(encoder, buffer, row_stride, pixel_stride, lfid, sample_fmt);
     if (ret < HYD_ERROR_START)
         return ret;
 

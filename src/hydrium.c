@@ -224,13 +224,13 @@ int main(int argc, const char *argv[]) {
         for (uint32_t x = 0; x < tile_width; x++) {
             if (ihdr.bit_depth > 8) {
                 const uint16_t *tile_buffer = ((const uint16_t *)buffer) + x * tile_size_x * 4;
-                const uint16_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
+                const void *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
                 // We divide by 2 because spng_stride is in bytes, not in uint16_t units
-                ret = hyd_send_tile(encoder, rgb, x, y, spng_stride / 2, 4, -1);
+                ret = hyd_send_tile(encoder, rgb, x, y, spng_stride / 2, 4, -1, HYD_UINT16);
             } else {
                 const uint8_t *tile_buffer = ((const uint8_t *)buffer) + x * tile_size_x * 3;
-                const uint8_t *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
-                ret = hyd_send_tile8(encoder, rgb, x, y, spng_stride, 3, -1);
+                const void *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
+                ret = hyd_send_tile(encoder, rgb, x, y, spng_stride, 3, -1, HYD_UINT8);
             }
             if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
                 goto done;
@@ -255,18 +255,16 @@ done:
         spng_ctx_free(spng_context);
     error_msg = hyd_error_message_get(encoder);
     hyd_encoder_destroy(encoder);
-    if (buffer)
-        free(buffer);
-    if (output_buffer)
-        free(output_buffer);
+    free(buffer);
+    free(output_buffer);
     hyd_profiling_allocator_destroy(allocator);
     if (ret < HYD_ERROR_START)
         fprintf(stderr, "Hydrium error occurred. Error code: %d\n", ret);
     if (error_msg && *error_msg)
         fprintf(stderr, "Error message: %s\n", error_msg);
     if (!ret)
-        fprintf(stderr, "Total libhydrium heap memory: %llu bytes\nMax libhydrium heap memory: %llu bytes\n",
-            (long long unsigned)profiler.total_alloced, (long long unsigned)profiler.max_alloced);
+        fprintf(stderr, "Total libhydrium heap memory: %zu bytes\nMax libhydrium heap memory: %zu bytes\n",
+            profiler.total_alloced, profiler.max_alloced);
 
     return ret;
 }
