@@ -26,13 +26,13 @@ static const uint8_t level10_header[49] = {
 };
 
 static const int32_t cosine_lut[7][8] = {
-    {45450,  38531,  25745,   9040,  -9040, -25745, -38531, -45450},
-    {42813,  17733, -17733, -42813, -42813, -17733,  17733,  42813},
-    {38531,  -9040, -45450, -25745,  25745,  45450,   9040, -38531},
-    {32767, -32767, -32767,  32767,  32767, -32767, -32767,  32767},
-    {25745, -45450,   9040,  38531, -38531,  -9040,  45450, -25745},
-    {17733, -42813,  42813, -17733, -17733,  42813, -42813,  17733},
-    {9040,  -25745,  38531, -45450,  45450, -38531,  25745,  -9040},
+    {0.17338, 0.146984, 0.0982119, 0.0344874, -0.0344874, -0.0982119, -0.146984, -0.17338},
+    {0.16332, 0.0676495, -0.0676495, -0.16332, -0.16332, -0.0676495, 0.0676495, 0.16332},
+    {0.146984, -0.0344874, -0.17338, -0.0982119, 0.0982119, 0.17338, 0.0344874, -0.146984},
+    {0.125, -0.125, -0.125, 0.125, 0.125, -0.125, -0.125, 0.125},
+    {0.0982119, -0.17338, 0.0344874, 0.146984, -0.146984, -0.0344874, 0.17338, -0.0982119},
+    {0.0676495, -0.16332, 0.16332, -0.0676495, -0.0676495, 0.16332, -0.16332, 0.0676495}, 
+    {0.0344874, -0.0982119, 0.146984, -0.17338, 0.17338, -0.146984, 0.0982119, -0.0344874},
 };
 
 static const IntPos natural_order[64] = {
@@ -356,7 +356,7 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     }
 
     size_t xyb_pixels = lf_group->lf_varblock_height * lf_group->lf_varblock_width * 64;
-    int16_t *temp_xyb = hyd_reallocarray(&encoder->allocator, encoder->xyb, 3 * xyb_pixels, sizeof(int16_t));
+    float *temp_xyb = hyd_reallocarray(&encoder->allocator, encoder->xyb, 3 * xyb_pixels, sizeof(float));
     if (!temp_xyb)
         return HYD_NOMEM;
     encoder->xyb = temp_xyb;
@@ -383,10 +383,6 @@ static HYDStatusCode write_lf_global(HYDEncoder *encoder) {
 }
 
 static const uint32_t lf_ma_tree[][2] = {
-    {1, 4}, {0, 0},
-    {1, 9}, {0, 0},
-    {1, 0}, {2, 2}, {3, 0}, {4, 0}, {5, 0},
-    {1, 0}, {2, 5}, {3, 0}, {4, 0}, {5, 0},
     {1, 0}, {2, 5}, {3, 0}, {4, 0}, {5, 0},
 };
 
@@ -419,14 +415,14 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group, c
         return ret;
 
     size_t nb_blocks = lf_group->lf_varblock_width * lf_group->lf_varblock_height;
-    ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, (const uint8_t[]){0, 1, 2},
-                                  3, 1, 1 << 14, 1, &encoder->error);
+    ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, (const uint8_t[]){0},
+                                  1, 1, 1 << 14, 1, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
     ret = hyd_entropy_set_hybrid_config(&stream, 0, 0, 7, 1, 1);
     if (ret < HYD_ERROR_START)
         return ret;
-    const int shift[3] = {3, 0, -1};
+    const float shift[3] = {8.0f, 1.0f, 0.5f};
     for (int i = 0; i < 3; i++) {
         const int c = i < 2 ? 1 - i : i;
         for (size_t vy = 0; vy < lf_group->lf_varblock_height; vy++) {
@@ -435,18 +431,16 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group, c
             int32_t prev_vp = 0;
             for (size_t vx = 0; vx < lf_group->lf_varblock_width; vx++) {
                 const size_t x = vx << 3;
-                int16_t *xyb = encoder->xyb + ((row + x) * 3 + c);
-                *xyb = shift[c] >= 0 ? *xyb * (UINT16_C(1) << shift[c]) : hyd_signed_rshift16(*xyb, -shift[c]);
-                int32_t w = x > 0 ? *(xyb - 24) : y > 0 ? *(xyb - 24 * lf_group->stride) : 0;
-                int32_t n = y > 0 ? *(xyb - 24 * lf_group->stride) : w;
-                int32_t nw = x > 0 && y > 0 ? *(xyb - 24 * (lf_group->stride + 1)) : w;
-                int32_t vp = w + n - nw;
-                int32_t min = hyd_min(w, n);
-                int32_t max = hyd_max(w, n);
-                size_t ctx = vx ? (w - prev_vp > 0 ? 1 : 2) : 0;
-                int32_t v = ctx ? hyd_clamp(vp, min, max) : n;
-                hyd_entropy_send_symbol(&stream, ctx, hyd_pack_signed(*xyb - v));
-                prev_vp = vp;
+                float *xyb = encoder->xyb + ((row + x) * 3 + c);
+                *xyb *= shift[c];
+                const float w = x > 0 ? *(xyb - 24) : y > 0 ? *(xyb - 24 * lf_group->stride) : 0;
+                const float n = y > 0 ? *(xyb - 24 * lf_group->stride) : w;
+                const float nw = x > 0 && y > 0 ? *(xyb - 24 * (lf_group->stride + 1)) : w;
+                const float vp = w + n - nw;
+                const float min = hyd_min(w, n);
+                const float max = hyd_max(w, n);
+                const float v = hyd_clamp(vp, min, max);
+                hyd_entropy_send_symbol(&stream, 0, hyd_pack_signed((int32_t)(65535.0f * (*xyb - v))));
             }
         }
     }
@@ -486,7 +480,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group, c
 }
 
 static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
-    int32_t scratchblock[2][8][8];
+    float scratchblock[2][8][8];
     for (size_t c = 0; c < 3; c++) {
         for (size_t by = 0; by < lf_group->lf_varblock_height; by++) {
             size_t vy = by << 3;
@@ -498,22 +492,20 @@ static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
                     scratchblock[0][y][0] = encoder->xyb[posy * 3 + c];
                     for (size_t x = 1; x < 8; x++)
                         scratchblock[0][y][0] += encoder->xyb[(posy + x) * 3 + c];
-                    scratchblock[0][y][0] >>= 3;
+                    scratchblock[0][y][0] *= 0.125f;
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
                             scratchblock[0][y][k] += encoder->xyb[(posy + n) * 3 + c] * cosine_lut[k - 1][n];
-                        scratchblock[0][y][k] = hyd_signed_rshift32(scratchblock[0][y][k], 18);
                     }
                 }
                 for (size_t x = 0; x < 8; x++) {
                     scratchblock[1][0][x] = scratchblock[0][0][x];
                     for (size_t y = 1; y < 8; y++)
                         scratchblock[1][0][x] += scratchblock[0][y][x];
-                    scratchblock[1][0][x] >>= 3;
+                    scratchblock[1][0][x] *= 0.125f;
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
                             scratchblock[1][k][x] += scratchblock[0][n][x] * cosine_lut[k - 1][n];
-                        scratchblock[1][k][x] = hyd_signed_rshift32(scratchblock[1][k][x], 18);
                     }
                 }
                 for (size_t y = 0; y < 8; y++) {
@@ -716,13 +708,13 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
                 const size_t vy6 = (vy + 6) * lf_pad_w;
                 for (size_t bx = 0; bx < gbw; bx++) {
                     const size_t vx = (bx << 3) + (gx << 8);
-                    const uint32_t hf = (((((encoder->xyb[3 * (vy7 + vx + 7) + 1] & UINT32_C(0x7FFF))
-                                        + (encoder->xyb[3 * (vy7 + vx + 7) + 2] & UINT32_C(0x7FFF))) << 1)
-                                        + (encoder->xyb[3 * (vy7 + vx + 6) + 1] & UINT32_C(0x7FFF))
-                                        + (encoder->xyb[3 * (vy6 + vx + 7) + 1] & UINT32_C(0x7FFF))
-                                        + (encoder->xyb[3 * (vy7 + vx + 6) + 2] & UINT32_C(0x7FFF))
-                                        + (encoder->xyb[3 * (vy6 + vx + 7) + 2] & UINT32_C(0x7FFF))) >> 14)
-                                            & UINT32_C(0xF);
+                    const uint32_t hf = (uint32_t)
+                                        (((hyd_abs(encoder->xyb[3 * (vy7 + vx + 7) + 1])
+                                        + hyd_abs(encoder->xyb[3 * (vy7 + vx + 7) + 2])) * 2.0
+                                        + hyd_abs(encoder->xyb[3 * (vy7 + vx + 6) + 1])
+                                        + hyd_abs(encoder->xyb[3 * (vy6 + vx + 7) + 1])
+                                        + hyd_abs(encoder->xyb[3 * (vy7 + vx + 6) + 2])
+                                        + hyd_abs(encoder->xyb[3 * (vy6 + vx + 7) + 2])) * 0.5f);
                     const size_t hf_mult_pos = (vy >> 3) * lf_group->lf_varblock_width + (vx >> 3);
                     hf_mult[hf_mult_pos] = hyd_max(hf, 5);
                     for (int i = 0; i < 3; i++) {
@@ -730,7 +722,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
                         for (int j = 1; j < 64; j++) {
                             const size_t py = vy + natural_order[j].y;
                             const size_t px = vx + natural_order[j].x;
-                            int16_t *xyb = encoder->xyb + ((py * lf_pad_w + px) * 3 + i);
+                            float *xyb = encoder->xyb + ((py * lf_pad_w + px) * 3 + i);
                             *xyb = hf_quant(*xyb, hf_quant_weights[i][j], hf_mult[hf_mult_pos]);
                             if (*xyb) {
                                 non_zeroes[((gindex << 10) + by * gbw + bx) * 3 + i]++;

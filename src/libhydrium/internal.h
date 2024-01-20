@@ -26,7 +26,7 @@ struct HYDEncoder {
     HYDImageMetadata metadata;
     HYDEntropyStream hf_stream;
 
-    int16_t *xyb;
+    float *xyb;
 
     int one_frame;
     int last_tile;
