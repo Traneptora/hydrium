@@ -619,16 +619,25 @@ static HYDStatusCode build_prefix_table(HYDEntropyStream *stream, HYDVLCElement 
                                         const uint32_t *lengths, uint32_t alphabet_size) {
     HYDStatusCode ret = HYD_OK;
     HYDAllocator *allocator = stream->allocator;
-    HYDVLCElement *pre_table = hyd_mallocarray(allocator, alphabet_size, sizeof(HYDVLCElement));
-    if (!pre_table)
-        return HYD_NOMEM;
-
-    for (int32_t j = 0; j < alphabet_size; j++) {
-        pre_table[j].length = lengths[j];
-        pre_table[j].symbol = j;
+    uint32_t *counts = NULL;
+    HYDVLCElement *pre_table = NULL;
+    size_t csize = hyd_max(alphabet_size + 1, 16);
+    counts = hyd_calloc(allocator, csize, sizeof(uint32_t));
+    pre_table = hyd_mallocarray(allocator, alphabet_size, sizeof(HYDVLCElement));
+    if (!counts || !pre_table) {
+        ret = HYD_NOMEM;
+        goto end;
     }
 
-    qsort(pre_table, alphabet_size, sizeof(HYDVLCElement), &symbol_compare);
+    for (uint32_t j = 0; j < alphabet_size; j++)
+        counts[lengths[j]]++;
+    for (uint32_t j = 1; j < alphabet_size + 1; j++)
+        counts[j] += counts[j - 1];
+    for (int32_t j = alphabet_size - 1; j >= 0; j--) {
+        uint32_t index = --counts[lengths[j]];
+        pre_table[index].length = lengths[j];
+        pre_table[index].symbol = j;
+    }
 
     uint64_t code = 0;
     for (int32_t j = 0; j < alphabet_size; j++) {
@@ -643,8 +652,11 @@ static HYDStatusCode build_prefix_table(HYDEntropyStream *stream, HYDVLCElement 
     if (code && code != (UINT64_C(1) << 32)) {
         *stream->error = "VLC codes do not add up";
         ret = HYD_INTERNAL_ERROR;
+        goto end;
     }
 
+end:
+    hyd_free(allocator, counts);
     hyd_free(allocator, pre_table);
     return ret;
 }
