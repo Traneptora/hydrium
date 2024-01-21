@@ -55,6 +55,7 @@ dkms.conf
 *.png
 *.raw
 *.jxl
+*.pfm
 
 # Valgrind dumps
 vgcore.*

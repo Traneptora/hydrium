@@ -36,6 +36,8 @@ struct HYDEncoder {
     int one_frame;
     int last_tile;
     HYDLFGroup *lf_group;
+    size_t *lf_group_perm;
+
     size_t lf_group_count_x;
     size_t lf_group_count_y;
     size_t lf_groups_per_frame;
@@ -50,7 +52,7 @@ struct HYDEncoder {
 
     int wrote_header;
     int wrote_frame_header;
-    int tile_sent;
+    size_t tiles_sent;
     int level10;
 
     size_t *section_endpos;

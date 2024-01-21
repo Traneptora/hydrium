@@ -58,6 +58,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     hyd_free(&encoder->allocator, encoder->working_writer.buffer);
     hyd_free(&encoder->allocator, encoder->xyb);
     hyd_free(&encoder->allocator, encoder->lf_group);
+    hyd_free(&encoder->allocator, encoder->lf_group_perm);
     hyd_free(&encoder->allocator, encoder);
     return HYD_OK;
 }
@@ -106,6 +107,11 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     encoder->lf_group = temp;
 
     if (encoder->one_frame) {
+        temp = hyd_reallocarray(&encoder->allocator, encoder->lf_group_perm,
+            encoder->lf_groups_per_frame, sizeof(size_t));
+        if (!temp)
+            return HYD_NOMEM;
+        encoder->lf_group_perm = temp;
         for (size_t y = 0; y < encoder->lf_group_count_y; y++) {
             for (size_t x = 0; x < encoder->lf_group_count_x; x++) {
                 ret = hyd_populate_lf_group(encoder, NULL, x, y);
