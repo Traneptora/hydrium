@@ -642,8 +642,8 @@ static HYDStatusCode encode_end(HYDEncoder *encoder) {
     encoder->wrote_frame_header = 0;
     ret = hyd_flush(encoder);
     hyd_entropy_stream_destroy(&encoder->hf_stream);
-    hyd_free(&encoder->allocator, encoder->section_endpos);
-    hyd_free(&encoder->allocator, encoder->hf_stream_barrier);
+    hyd_freep(&encoder->allocator, &encoder->section_endpos);
+    hyd_freep(&encoder->allocator, &encoder->hf_stream_barrier);
     return ret;
 }
 

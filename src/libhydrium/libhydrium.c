@@ -52,6 +52,9 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     if (!encoder)
         return HYD_OK;
+    hyd_entropy_stream_destroy(&encoder->hf_stream);
+    hyd_free(&encoder->allocator, encoder->section_endpos);
+    hyd_free(&encoder->allocator, encoder->hf_stream_barrier);
     hyd_free(&encoder->allocator, encoder->working_writer.buffer);
     hyd_free(&encoder->allocator, encoder->xyb);
     hyd_free(&encoder->allocator, encoder->lf_group);

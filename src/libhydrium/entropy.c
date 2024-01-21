@@ -561,10 +561,9 @@ static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t
     if (max_depth < 0)
         max_depth = hyd_cllog2(alphabet_size);
 
-    memset(tree + alphabet_size, 0, (alphabet_size - 1) * sizeof(FrequencyEntry));
     for (uint32_t k = 0; k < alphabet_size - 1; k++) {
-        FrequencyEntry *smallest = NULL;
-        FrequencyEntry *second = NULL;
+        uint32_t smallest = 2 * k;
+        uint32_t second = smallest + 1;
         int32_t nz = 0;
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++)
             nz += !!tree[j].frequency;
@@ -572,28 +571,25 @@ static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
             if (tree[j].max_depth >= target)
                 continue;
-            if (!smallest || huffman_compare(&tree[j], smallest) < 0) {
+            if (huffman_compare(&tree[j], &tree[smallest]) < 0) {
                 second = smallest;
-                smallest = &tree[j];
-            } else if (!second || huffman_compare(&tree[j], second) < 0) {
-                second = &tree[j];
+                smallest = j;
+            } else if (huffman_compare(&tree[j], &tree[second]) < 0) {
+                second = j;
             }
         }
-        if (!smallest || !second) {
-            *stream->error = "empty smallest or second smallest";
-            ret = HYD_INTERNAL_ERROR;
-            goto end;
-        }
-        if (!second->frequency)
+        if (!tree[second].frequency)
             break;
-        hyd_swap(FrequencyEntry, *smallest, tree[2 * k]);
-        smallest = &tree[2 * k];
-        hyd_swap(FrequencyEntry, *second, tree[2 * k + 1]);
-        second = &tree[2 * k + 1];
+        hyd_swap(FrequencyEntry, tree[smallest], tree[2 * k]);
+        if (second == 2 * k)
+            second = smallest;
+        smallest = 2 * k;
+        hyd_swap(FrequencyEntry, tree[second], tree[2 * k + 1]);
+        second = smallest + 1;
         FrequencyEntry *entry = &tree[alphabet_size + k];
-        entry->frequency = smallest->frequency + second->frequency;
-        entry->left_child = smallest;
-        entry->right_child = second;
+        entry->frequency = tree[smallest].frequency + tree[second].frequency;
+        entry->left_child = &tree[smallest];
+        entry->right_child = &tree[second];
         collect(entry);
     }
 
