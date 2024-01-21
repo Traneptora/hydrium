@@ -552,35 +552,47 @@ static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t
         goto end;
     }
 
+    uint32_t nz = 0;
     for (uint32_t token = 0; token < alphabet_size; token++) {
         tree[token].frequency = frequencies[token];
         tree[token].token = 1 + token;
         tree[token].left_child = tree[token].right_child = NULL;
+        if (frequencies[token])
+            nz++;
+    }
+    if (!nz) {
+        *stream->error = "No nonzero frequencies";
+        ret = HYD_INTERNAL_ERROR;
+        goto end;
     }
 
     if (max_depth < 0)
-        max_depth = hyd_cllog2(alphabet_size);
+        max_depth = hyd_cllog2(alphabet_size + 1);
 
     for (uint32_t k = 0; k < alphabet_size - 1; k++) {
-        uint32_t smallest = 2 * k;
-        uint32_t second = smallest + 1;
-        int32_t nz = 0;
-        for (uint32_t j = 2 * k; j < alphabet_size + k; j++)
-            nz += !!tree[j].frequency;
-        int32_t target = max_depth - (nz > 1 ? hyd_fllog2(nz - 1) : 0);
+        int32_t smallest = -1;
+        int32_t second = -1;
+        int32_t target = max_depth - hyd_cllog2(nz--) + 1;
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
+            if (!tree[j].frequency)
+                continue;
             if (tree[j].max_depth >= target)
                 continue;
-            if (huffman_compare(&tree[j], &tree[smallest]) < 0) {
+            if (smallest < 0 || huffman_compare(&tree[j], &tree[smallest]) < 0) {
                 second = smallest;
                 smallest = j;
-            } else if (huffman_compare(&tree[j], &tree[second]) < 0) {
+            } else if (second < 0 || huffman_compare(&tree[j], &tree[second]) < 0) {
                 second = j;
             }
         }
-        if (!tree[second].frequency)
-            break;
+        if (smallest < 0) {
+            *stream->error = "couldn't find target";
+            ret = HYD_INTERNAL_ERROR;
+            goto end;
+        }
         hyd_swap(FrequencyEntry, tree[smallest], tree[2 * k]);
+        if (second < 0)
+            break;
         if (second == 2 * k)
             second = smallest;
         smallest = 2 * k;

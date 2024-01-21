@@ -340,6 +340,7 @@ int main(int argc, const char *argv[]) {
                 const void *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
                 ret = hyd_send_tile(encoder, rgb, x, y, buffer_stride, 3, -1, HYD_UINT8);
             } else {
+                /* pfm goes from bottom to top for some reason */
                 void *buffer_bottom = buffer + buffer_stride * (this_tile_height - 1);
                 const float *tile_buffer = ((const float *)buffer_bottom) + x * tile_size_x * 3;
                 const void *const rgb[3] = {tile_buffer, tile_buffer + 1, tile_buffer + 2};
