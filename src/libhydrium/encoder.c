@@ -1,7 +1,6 @@
 /*
  * Base encoder implementation
  */
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -883,7 +882,7 @@ static HYDStatusCode populate_xyb_buffer(HYDEncoder *encoder, const void *const 
                     rgb[0] = ((float *)buffer[0])[offset];
                     rgb[1] = ((float *)buffer[1])[offset];
                     rgb[2] = ((float *)buffer[2])[offset];
-                    if (!isfinite(rgb[0]) || !isfinite(rgb[1]) || !isfinite(rgb[2])) {
+                    if (!hyd_isfinite(rgb[0]) || !hyd_isfinite(rgb[1]) || !hyd_isfinite(rgb[2])) {
                         encoder->error = "Invalid NaN Float";
                         return HYD_API_ERROR;
                     }

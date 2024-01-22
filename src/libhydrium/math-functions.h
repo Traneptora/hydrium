@@ -55,15 +55,9 @@ static inline uint32_t hyd_pack_signed(const int32_t v) {
     return ((uint32_t)v << 1) ^ -!!(v & UINT32_C(0x80000000));
 }
 
-static const uint32_t br_lut[16] = {
-    0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
-    0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF,
-};
-static inline uint32_t hyd_bitswap32(const uint32_t b) {
-    uint32_t c = 0;
-    for (unsigned i = 0; i < 32; i += 4)
-        c |= br_lut[(b >> i) & 0xF] << (28 - i);
-    return c;
+static inline int hyd_isfinite(const float x) {
+    const union { uint32_t i; float f; } z = { .f = x };
+    return (z.i & 0x7f800000) != 0x7f800000;
 }
 
 #define hyd_abs(a) ((a) < 0 ? -(a) : (a))

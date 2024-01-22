@@ -653,6 +653,17 @@ end:
     return ret;
 }
 
+static const uint32_t br_lut[16] = {
+    0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
+    0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF,
+};
+static inline uint32_t bitswap32(const uint32_t b) {
+    uint32_t c = 0;
+    for (unsigned i = 0; i < 32; i += 4)
+        c |= br_lut[(b >> i) & 0xF] << (28 - i);
+    return c;
+}
+
 static HYDStatusCode build_prefix_table(HYDEntropyStream *stream, HYDVLCElement *table,
                                         const uint32_t *lengths, uint32_t alphabet_size) {
     HYDStatusCode ret = HYD_OK;
@@ -682,7 +693,7 @@ static HYDStatusCode build_prefix_table(HYDEntropyStream *stream, HYDVLCElement 
         if (!pre_table[j].length)
             continue;
         uint32_t s = pre_table[j].symbol;
-        table[s].symbol = hyd_bitswap32(code);
+        table[s].symbol = bitswap32(code);
         table[s].length = pre_table[j].length;
         code += UINT64_C(1) << (32 - pre_table[j].length);
     }
