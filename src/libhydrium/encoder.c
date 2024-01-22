@@ -837,12 +837,20 @@ static inline float linearize(const float srgb) {
     return powf((srgb + 0.055f) * 0.9478672985781991f, 2.4f);
 }
 
+static inline float hyd_cbrtf(const float x) {
+    union { float f; uint32_t i; } z = { .f = x };
+    z.i = 0x548c39cb - z.i / 3;
+    z.f *= 1.5015480449f - 0.534850249f * x * z.f * z.f * z.f;
+    z.f *= 1.333333985f - 0.33333333f * x * z.f * z.f * z.f;
+    return 1.0f / z.f;
+}
+
 static inline void rgb_to_xyb(const float rgb[3], float *xyb) {
-    const float lgamma = cbrtf(0.3f * rgb[0] + 0.622f * rgb[1] + 0.078f * rgb[2]
+    const float lgamma = hyd_cbrtf(0.3f * rgb[0] + 0.622f * rgb[1] + 0.078f * rgb[2]
         + 0.0037930732552754493f) - 0.155954f;
-    const float mgamma = cbrtf(0.23f * rgb[0] + 0.692f * rgb[1] + 0.078f * rgb[2]
+    const float mgamma = hyd_cbrtf(0.23f * rgb[0] + 0.692f * rgb[1] + 0.078f * rgb[2]
         + 0.0037930732552754493f) - 0.155954f;
-    const float sgamma = cbrtf(0.243423f * rgb[0] + 0.204767f * rgb[1] + 0.55181f * rgb[2]
+    const float sgamma = hyd_cbrtf(0.243423f * rgb[0] + 0.204767f * rgb[1] + 0.55181f * rgb[2]
         + 0.0037930732552754493f) - 0.155954f;
     xyb[0] = (lgamma - mgamma) * 0.5f;
     const float y = xyb[1] = (lgamma + mgamma) * 0.5f;
