@@ -69,12 +69,12 @@ HYDStatusCode hyd_write_bool(HYDBitWriter *bw, int flag) {
     return hyd_write(bw, !!flag, 1);
 }
 
-HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const uint32_t c[4], const uint32_t u[4], uint32_t value) {
+HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const U32Table *table, uint32_t value) {
     for (int i = 0; i < 4; i++) {
-        const uint64_t max = ~(~UINT64_C(0) << u[i]);
-        const uint64_t vmc = value - c[i];
+        const uint64_t max = ~(~UINT64_C(0) << table->upos[i]);
+        const uint64_t vmc = value - table->cpos[i];
         if (vmc <= max)
-            return hyd_write(bw, (vmc << 2) | i, u[i] + 2);
+            return hyd_write(bw, (vmc << 2) | i, table->upos[i] + 2);
     }
     return HYD_API_ERROR;
 }

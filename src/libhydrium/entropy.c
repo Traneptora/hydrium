@@ -44,6 +44,26 @@ static const HYDVLCElement prefix_level0_table[6] = {
     {0, 2}, {7, 4}, {3, 3}, {2, 2}, {1, 2}, {15, 4},
 };
 
+static const U32Table min_symbol_table = {
+    .cpos = {224, 512, 4096, 8},
+    .upos = {0, 0, 0, 15},
+};
+static const U32Table min_length_table = {
+    .cpos = {3, 4, 5, 9},
+    .upos = {0, 0, 2, 8},
+};
+
+static const uint32_t br_lut[16] = {
+    0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
+    0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF,
+};
+static inline uint32_t bitswap32(const uint32_t b) {
+    uint32_t c = 0;
+    for (unsigned i = 0; i < 32; i += 4)
+        c |= br_lut[(b >> i) & 0xF] << (28 - i);
+    return c;
+}
+
 static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
     hyd_write_bool(bw, b);
     if (!b)
@@ -520,10 +540,8 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
         ret = flush_lz77(stream);
         if (ret < HYD_ERROR_START)
             return ret;
-        hyd_write_u32(bw, (const uint32_t[4]){224, 512, 4096, 8}, (const uint32_t[4]){0, 0, 0, 15},
-            stream->lz77_min_symbol);
-        hyd_write_u32(bw, (const uint32_t[4]){3, 4, 5, 9}, (const uint32_t[4]){0, 0, 2, 8},
-            stream->lz77_min_length);
+        hyd_write_u32(bw, &min_symbol_table, stream->lz77_min_symbol);
+        hyd_write_u32(bw, &min_length_table, stream->lz77_min_length);
         ret = write_hybrid_uint_config(stream, &lz77_len_conf, 8);
     }
     if (ret < HYD_ERROR_START)
@@ -651,17 +669,6 @@ static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t
 end:
     hyd_free(allocator, tree);
     return ret;
-}
-
-static const uint32_t br_lut[16] = {
-    0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
-    0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF,
-};
-static inline uint32_t bitswap32(const uint32_t b) {
-    uint32_t c = 0;
-    for (unsigned i = 0; i < 32; i += 4)
-        c |= br_lut[(b >> i) & 0xF] << (28 - i);
-    return c;
 }
 
 static HYDStatusCode build_prefix_table(HYDEntropyStream *stream, HYDVLCElement *table,
