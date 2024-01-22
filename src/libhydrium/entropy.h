@@ -42,7 +42,7 @@ typedef struct HYDEntropyStream {
     HYDHybridSymbol *symbols;
     uint16_t max_alphabet_size;
     uint16_t *alphabet_sizes;
-    uint32_t *frequencies;
+    uint32_t **frequencies;
     HYDHybridUintConfig *configs;
     int wrote_stream_header;
 
@@ -55,10 +55,10 @@ typedef struct HYDEntropyStream {
     int modular;
 
     // prefix only
-    HYDVLCElement *vlc_table;
+    HYDVLCElement **vlc_table;
 
     // ans only
-    HYDAliasEntry *alias_table;
+    HYDAliasEntry **alias_table;
 
     // in case of error, break glass
     const char **error;
