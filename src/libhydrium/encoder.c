@@ -824,7 +824,6 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     hyd_entropy_stream_destroy(&encoder->hf_stream);
     hyd_freep(&encoder->allocator, &encoder->section_endpos);
     hyd_freep(&encoder->allocator, &encoder->hf_stream_barrier);
-    return ret;
 
 end:
     hyd_free(&encoder->allocator, non_zeroes);
