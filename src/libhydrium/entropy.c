@@ -298,19 +298,34 @@ static int32_t write_ans_frequencies(HYDEntropyStream *stream, uint32_t *frequen
     }
 
     frequencies[0] += (1 << 12) - new_total;
-    if (frequencies[0] == 1 << 12) {
-        // simple dist
-        hyd_write(bw, 0x1, 2);
-        write_ans_u8(bw, 0);
-        return 0;
+
+    int32_t nz1 = -1, nz2 = -1, nzc = 0;
+
+    for (size_t k = 0; k < alphabet_size; k++) {
+        if (frequencies[k] == 1 << 12) {
+            // simple dist
+            hyd_write(bw, 0x1, 2);
+            write_ans_u8(bw, k);
+            return k;
+        }
+        if (!frequencies[k])
+            continue;
+        if (++nzc > 2)
+            break;
+        if (nz1 < 0) {
+            nz1 = k;
+        } else if (frequencies[nz1] + frequencies[k] == 1 << 12) {
+            nz2 = k;
+            break;
+        }
     }
 
-    if (frequencies[0] + frequencies[1] == 1 << 12) {
+    if (nz1 >= 0 && nz2 >= 0) {
         // simple dual peak dist
         hyd_write(bw, 0x3, 2);
-        write_ans_u8(bw, 0);
-        write_ans_u8(bw, 1);
-        hyd_write(bw, frequencies[0], 12);
+        write_ans_u8(bw, nz1);
+        write_ans_u8(bw, nz2);
+        hyd_write(bw, frequencies[nz1], 12);
         return HYD_DEFAULT;
     }
 
@@ -795,7 +810,8 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
     HYDBitWriter *bw = stream->bw;
     uint32_t *lengths = NULL;
 
-    if ((ret = stream_header_common(stream, &log_alphabet_size, 1)) < HYD_ERROR_START)
+    ret = stream_header_common(stream, &log_alphabet_size, 1);
+    if (ret < HYD_ERROR_START)
         goto fail;
 
     for (size_t i = 0; i < stream->num_clusters; i++) {
@@ -922,18 +938,10 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
     int log_alphabet_size;
     HYDBitWriter *bw = stream->bw;
 
-    for (size_t i = 0; i < stream->num_clusters; i++) {
-        const HYDHybridUintConfig *config = &stream->configs[i];
-        size_t max_token = (((29 - config->split_exponent + config->msb_in_token + config->lsb_in_token) <<
-            (config->msb_in_token + config->lsb_in_token)) | ~(~UINT32_C(0) << (config->msb_in_token +
-            config->lsb_in_token))) + (1 << config->split_exponent);
-        stream->max_alphabet_size = hyd_max(stream->max_alphabet_size, max_token);
-    }
-
-    if ((ret = stream_header_common(stream, &log_alphabet_size, 0)) < HYD_ERROR_START)
+    ret = stream_header_common(stream, &log_alphabet_size, 0);
+    if (ret < HYD_ERROR_START)
         goto fail;
 
-    /* generate alias mappings */
     stream->alias_table = hyd_calloc(stream->allocator, stream->num_clusters, sizeof(HYDAliasEntry *));
     if (!stream->alias_table) {
         ret = HYD_NOMEM;
