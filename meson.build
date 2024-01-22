@@ -46,8 +46,6 @@ hydrium_sources = files(
 
 libhydrium_includes = include_directories('src/include')
 
-m_dep = cc.find_library('m')
-
 libhydrium = library('hydrium',
     sources: libhydrium_sources,
     soversion : '0',
@@ -55,7 +53,6 @@ libhydrium = library('hydrium',
     link_args: ldflags,
     install: true,
     include_directories: libhydrium_includes,
-    dependencies: [m_dep],
 )
 
 libhydrium_dep = declare_dependency(include_directories: libhydrium_includes, link_with: libhydrium)
