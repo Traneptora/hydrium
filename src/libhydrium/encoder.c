@@ -830,11 +830,12 @@ end:
     return ret;
 }
 
-static inline float linearize(const float srgb) {
-    if (srgb <= 0.0404482362771082f)
-        return 0.07739938080495357f * srgb;
-
-    return powf((srgb + 0.055f) * 0.9478672985781991f, 2.4f);
+static inline float linearize(const float x) {
+    if (x <= 0.0404482362771082f)
+        return 0.07739938080495357f * x;
+    const float y = 2.9476545525510693f * x - 1.5359539026402749f;
+    const float z = y * 0.011138900187516445f + 0.13420198008445997f;
+    return y * (y * z + 0.3411732297753588f) - z + 0.3679729953772884f;
 }
 
 static inline float hyd_cbrtf(const float x) {
