@@ -1,8 +1,9 @@
 project('hydrium', 'c',
     license: ['BSD-2-Clause'],
-    version : '0.4.0',
+    version : '0.4.1',
     default_options: [
-        'buildtype=minsize',
+        'debug=false',
+        'optimization=s',
         'c_std=c99',
         'warning_level=1',
     ],
@@ -19,6 +20,9 @@ wanted_cflags = [
     '-Wformat',
     '-Werror=format-security',
     '-fvisibility=hidden',
+    '-ffp-contract=fast',
+    '-fallow-store-data-races',
+    '-ffast-math',
 ]
 
 ldflags = []
