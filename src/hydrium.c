@@ -24,11 +24,20 @@
 static const char pfm_sig[4] = "PF\n";
 
 static void print_usage(const char *argv0) {
-    fprintf(stderr, "Usage: %s [options] <input.png> <output.jxl>\n", argv0);
+    fprintf(stderr, "Usage: %s [options] [--] <input.png|input.pfm> <output.jxl>\n", argv0);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "    --help         Print this message\n");
     fprintf(stderr, "    --tile-size=N  Use Tile Size Shift = N, valid values are 0, 1, 2, 3\n");
+    fprintf(stderr, "                       Tile dimensions will be 256 * 2^N\n");
+    fprintf(stderr, "                       Larger tiles use more memory but decode faster.\n");
+    fprintf(stderr, "                       (default: N=0)\n");
     fprintf(stderr, "    --one-frame    Use one frame. Uses more memory but decodes faster.\n");
+    fprintf(stderr, "                       (default: off)\n");
+    fprintf(stderr, "    --pfm          Assume input is PFM (Portable FloatMap)\n");
+    fprintf(stderr, "    --png          Assume input is PNG (Portable Network Graphics)\n");
+    fprintf(stderr, "                       (default: assume PNG unless input filename ends with .pfm)\n");
+    fprintf(stderr, "    --linear       Assume input is in Linear Light\n");
+    fprintf(stderr, "                       (default: assume sRGB transfer, regardless of PNG tags)\n");
 }
 
 static int init_spng_stream(spng_ctx **ctx, const char **error_msg, FILE *fin, struct spng_ihdr *ihdr) {
@@ -62,7 +71,7 @@ int main(int argc, const char *argv[]) {
     HYDEncoder *encoder = NULL;
     HYDAllocator *allocator = NULL;
     int ret = 1;
-    FILE *fp = stdout, *fin = stdin;
+    FILE *fout = stdout, *fin = stdin;
     HYDMemoryProfiler profiler = { 0 };
     const char *error_msg = NULL;
     spng_ctx *spng_context = NULL;
@@ -82,24 +91,24 @@ int main(int argc, const char *argv[]) {
     int argp = 0;
     const char *in_fname = NULL;
     const char *out_fname = NULL;
+    int found_mm = 0;
 
     while (++argp < argc) {
-        if (strncmp(argv[argp], "--", 2)) {
+        if (found_mm || strncmp(argv[argp], "--", 2)) {
             if (!in_fname)
                 in_fname = argv[argp];
             else if (!out_fname)
                 out_fname = argv[argp];
             else {
                 fprintf(stderr, "Invalid trailing arg: %s\n", argv[argp]);
-                print_usage(argv[0]);
+                fprintf(stderr, "Please run: %s --help\n", argv[0]);
                 return 2;
             }
         } else if (!strcmp(argv[argp], "--help")) {
             print_usage(argv[0]);
             return 0;
         } else if (!argv[argp][2]) {
-            argp++;
-            break;
+            found_mm = 1;
         } else if (!strcmp(argv[argp], "--one-frame")) {
             one_frame = 1;
         } else if (!strncmp(argv[argp], "--tile-size=", 12)) {
@@ -107,12 +116,12 @@ int main(int argc, const char *argv[]) {
             tilesize = strtol(argv[argp] + 12, NULL, 10);
             if (errno) {
                 fprintf(stderr, "Invalid integer: %s\n", argv[argp] + 12);
-                print_usage(argv[0]);
+                fprintf(stderr, "Please run: %s --help\n", argv[0]);
                 return 2;
             }
             if (tilesize < 0 || tilesize > 3) {
                 fprintf(stderr, "Invalid tile size, must be 0-3: %s\n", argv[argp] + 12);
-                print_usage(argv[0]);
+                fprintf(stderr, "Please run: %s --help\n", argv[0]);
                 return 2;
             }
         } else if (!strcmp(argv[argp], "--pfm")) {
@@ -160,6 +169,10 @@ int main(int argc, const char *argv[]) {
             goto done;
         }
         while (1) {
+            /*
+             * we read this one char at a time
+             * in order to prevent from overreading
+             */
             c = fgetc(fin);
             if (c >= '0' && c <= '9')
                 width = width * 10 + (c - '0');
@@ -190,11 +203,13 @@ int main(int argc, const char *argv[]) {
             endianness = 1;
         else
             endianness = -1;
+        int n = 0;
         while (1) {
             c = fgetc(fin);
             if (c == '\n')
                 break;
-            if (c < 0) {
+            /* disallow >64 chars for endianness for sanity */
+            if (c < 0 || n++ > 64) {
                 error_msg = "invalid PFM endianness";
                 goto done;
             }
@@ -285,24 +300,27 @@ int main(int argc, const char *argv[]) {
     }
 
     if (out_fname && strcmp(out_fname, "-")) {
-        fp = fopen(out_fname, "wb");
-        if (!fp) {
+        fout = fopen(out_fname, "wb");
+        if (!fout) {
             fprintf(stderr, "%s: error opening file for writing: %s\n", argv[0], out_fname);
             goto done;
         }
     }
 
-    if (hyd_isatty(fp)) {
+    if (hyd_isatty(fout)) {
         fprintf(stderr, "%s: Not writing compressed data to a terminal.\n", argv[0]);
         print_usage(argv[0]);
         ret = 3;
         goto done;
     }
 
-    if ((ret = hyd_set_metadata(encoder, &metadata)) < HYD_ERROR_START)
+    ret = hyd_set_metadata(encoder, &metadata);
+    if (ret < HYD_ERROR_START)
         goto done;
 
-    hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+    ret = hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+    if (ret < HYD_ERROR_START)
+        goto done;
 
     struct spng_row_info row_info = {0};
     for (uint32_t yk = 0; yk < tile_height; yk++) {
@@ -336,8 +354,8 @@ int main(int argc, const char *argv[]) {
                     for (size_t gx = 0; gx < 3 * width; gx++) {
                         const uint32_t n = irow[gx];
                         /* gcc generates a single bswap instruction here */
-                        irow[gx] = ((n & 0xff000000) >> 24) | ((n & 0x00ff0000) >> 8)
-                            | ((n & 0x0000ff00) << 8) | ((n & 0xff) << 24);
+                        irow[gx] = ((n & UINT32_C(0xff000000)) >> 24) | ((n & UINT32_C(0x00ff0000)) >> 8)
+                            | ((n & UINT32_C(0x0000ff00)) << 8) | ((n & UINT32_C(0xff)) << 24);
                     }
                 }
             }
@@ -365,9 +383,15 @@ int main(int argc, const char *argv[]) {
             do {
                 ret = hyd_flush(encoder);
                 size_t written;
-                hyd_release_output_buffer(encoder, &written);
-                fwrite(output_buffer, written, 1, fp);
-                hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+                HYDStatusCode ret2 = hyd_release_output_buffer(encoder, &written);
+                if (ret2 < HYD_ERROR_START)
+                    goto done;
+                size_t fout_written = fwrite(output_buffer, written, 1, fout);
+                if (written && !fout_written)
+                    goto done;
+                ret2 = hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
+                if (ret2 < HYD_ERROR_START)
+                    goto done;
             } while (ret == HYD_NEED_MORE_OUTPUT);
             if (ret != HYD_OK)
                 goto done;
@@ -375,8 +399,8 @@ int main(int argc, const char *argv[]) {
     }
 
 done:
-    if (fp)
-        fclose(fp);
+    if (fout)
+        fclose(fout);
     if (fin)
         fclose(fin);
     if (spng_context)
@@ -393,8 +417,7 @@ done:
     if (error_msg && *error_msg)
         fprintf(stderr, "Error message: %s\n", error_msg);
     if (!ret)
-        fprintf(stderr, "Total libhydrium heap memory: %zu bytes\nMax libhydrium heap memory: %zu bytes\n",
-            profiler.total_alloced, profiler.max_alloced);
+        fprintf(stderr, "Max libhydrium heap memory: %zu bytes\n", profiler.max_alloced);
 
     return ret;
 }

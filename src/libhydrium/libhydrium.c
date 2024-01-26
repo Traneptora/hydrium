@@ -132,6 +132,14 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
         encoder->error = "provided buffer must be at least 64 bytes long";
         return HYD_API_ERROR;
     }
+    if (encoder->out) {
+        encoder->error = "buffer was already provided";
+        return HYD_API_ERROR;
+    }
+    if (!buffer) {
+        encoder->error = "buffer may not be null";
+        return HYD_API_ERROR;
+    }
     encoder->out = buffer;
     encoder->out_len = buffer_len;
     encoder->out_pos = 0;
@@ -143,13 +151,22 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size_t *written) {
+    if (!encoder->out) {
+        encoder->error = "buffer was never provided";
+        return HYD_API_ERROR;
+    }
     *written = encoder->writer.buffer_pos;
+    encoder->out = NULL;
     return encoder->writer.overflow_state;
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
     if (encoder->one_frame && !encoder->last_tile)
         return HYD_OK;
+    if (!encoder->out) {
+        encoder->error = "buffer was never provided";
+        return HYD_API_ERROR;
+    }
     hyd_bitwriter_flush(&encoder->writer);
     size_t tocopy = encoder->writer.buffer_len - encoder->writer.buffer_pos;
     if (tocopy > encoder->working_writer.buffer_pos - encoder->copy_pos)
