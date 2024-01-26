@@ -75,7 +75,7 @@ int main(int argc, const char *argv[]) {
     }
 
     int one_frame = 0;
-    int pfm = 0;
+    int pfm = -1;
     int linear = 0;
     int endianness = 0;
     long tilesize = 0;
@@ -117,9 +117,22 @@ int main(int argc, const char *argv[]) {
             }
         } else if (!strcmp(argv[argp], "--pfm")) {
             pfm = 1;
+        } else if (!strcmp(argv[argp], "--png")) {
+            pfm = 0;
         } else if (!strcmp(argv[argp], "--linear")) {
             linear = 1;
         }
+    }
+
+    if (in_fname && pfm < 0) {
+        size_t len = strlen(in_fname);
+        if (len > 3) {
+            pfm = !strncmp(in_fname + len - 4, ".pfm", 4);
+        } else {
+            pfm = 0;
+        }
+    } else if (pfm < 0) {
+        pfm = 0;
     }
 
     if (in_fname && strcmp(in_fname, "-")) {
