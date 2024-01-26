@@ -505,12 +505,17 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
 
     hyd_write_zero_pad(bw);
 
-    /*
-     * all_default = 0:1
-     * frame_type = 0:2
-     * encoding = 0:1
-     */
-    hyd_write(bw, 0, 4);
+    int is_last = encoder->one_frame || encoder->last_tile;
+    int have_crop = !encoder->one_frame &&
+        !(encoder->metadata.width <= encoder->lf_group->lf_group_width
+        && encoder->metadata.height <= encoder->lf_group->lf_group_height);
+
+    /* all_default = 0 */
+    hyd_write(bw, 0, 1);
+    /* frame_type = kRegularFrame or kSkipProgressive */
+    hyd_write(bw, is_last ? 0 : 3, 2);
+    /* frame_encoding = VarDCT */
+    hyd_write(bw, 0, 1);
     /* flags = kSkipAdaptiveLFSmoothing */
     hyd_write_u64(bw, 0x80);
     /*
@@ -520,11 +525,6 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
      * num_passes = 0:2
      */
     hyd_write(bw, 0x4C, 10);
-
-    int is_last = encoder->one_frame || encoder->last_tile;
-    int have_crop = !encoder->one_frame &&
-        !(encoder->metadata.width <= encoder->lf_group->lf_group_width
-        && encoder->metadata.height <= encoder->lf_group->lf_group_height);
 
     hyd_write_bool(bw, have_crop);
 
