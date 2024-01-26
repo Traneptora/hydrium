@@ -918,8 +918,6 @@ static HYDStatusCode realloc_working_buffer(HYDAllocator *allocator, uint8_t **b
     return HYD_OK;
 }
 
-#include <stdio.h>
-
 static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t tile_y) {
     uint8_t *non_zeroes = NULL;
     HYDStatusCode ret = HYD_OK;

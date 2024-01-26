@@ -1,5 +1,5 @@
 /*
- * libhydrium/hydrium.h
+ * libhydrium/libhydrium.h
  * 
  * This is the main libhydrium API entry point.
  */
@@ -11,12 +11,44 @@
 #include <stdint.h>
 
 /*
+ * Major version, following semantic versioning.
+ * If positive, dictates the API and ABI.
+ */
+#define HYDRIUM_VERSION_MAJOR 0
+/*
+ * Minor version, following semantic versioning.
+ */
+#define HYDRIUM_VERSION_MINOR 4
+/*
+ * Point release, following semantic versioning.
+ */
+#define HYDRIUM_VERSION_POINT 1
+
+/*
+ * Compute the numeric version. Used to compare version numbers directly
+ */
+#define HYDRIUM_COMPUTE_VERSION(ma, mi, po) (UINT64_C(0x1000000000) \
+    | ((uint64_t)(ma) << 24) \
+    | ((uint64_t)(mi) << 12) \
+    | ((uint64_t)(po)))
+
+/*
  * The format of the version integer is:
  * 0x1XXXYYYZZZ where XXX is the major version, YYY is the minor version,
  * and ZZZ is the point release.
  */
-#define HYDRIUM_VERSION_INT 0x1000004001
-#define HYDRIUM_VERSION_STRING "0.4.1"
+#define HYDRIUM_VERSION_INT HYDRIUM_COMPUTE_VERSION(\
+    HYDRIUM_VERSION_MAJOR, \
+    HYDRIUM_VERSION_MINOR, \
+    HYDRIUM_VERSION_POINT)
+
+#define HYD_STRINGIFY(n) HYD_STRINGIFY0(n)
+#define HYD_STRINGIFY0(n) #n
+
+#define HYDRIUM_VERSION_STRING \
+        HYD_STRINGIFY(HYDRIUM_VERSION_MAJOR) "." \
+        HYD_STRINGIFY(HYDRIUM_VERSION_MINOR) "." \
+        HYD_STRINGIFY(HYDRIUM_VERSION_POINT)
 
 #ifdef _WIN32
     #ifdef HYDRIUM_INTERNAL_BUILD
@@ -42,18 +74,18 @@ typedef enum HYDStatusCode {
      */
     HYD_DEFAULT = -1,
     /**
-     * Every error code is less than HYD_ERROR_START, which is negative.
-     * This is not an actual error and it is never returned.
-     */
-    HYD_ERROR_START = -10,
-    /**
      * Another output buffer is needed.
      */
-    HYD_NEED_MORE_OUTPUT = -11,
+    HYD_NEED_MORE_OUTPUT = -2,
     /**
      * More input must be provided.
      */
-    HYD_NEED_MORE_INPUT = -12,
+    HYD_NEED_MORE_INPUT = -3,
+    /**
+     * Every proper error code is less than HYD_ERROR_START, which is negative.
+     * This is not an actual error and it is never returned.
+     */
+    HYD_ERROR_START = -10,
     /**
      * A heap allocation failed due to insufficient memory remaining.
      */
@@ -213,14 +245,21 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  * and it will not overrun the buffers.
  *
  * If the encoded tile is fully written to the output buffer, then HYD_OK will be returned, and it
- * is time to send another tile. Tiles may be sent in (almost) any order, although the lower-right-most tile must
- * be sent last. When the tile in the lower right of the image is sent, it is assumed that no more tiles will be sent.
- * Sending another tile after that one will result in garbage trailing data after the end of the JPEG XL file.
+ * is time to send another tile. Tiles may be sent in any order, although libhydrium will assume that the
+ * lower-right tile is the last tile. Passing 0 or 1 to is_last will explicitly tell libhydrium if the sent tile is
+ * the last one - otherwise, pass a negative value to use the above default behavior. Sending another tile
+ * after the last one is undefined behavior.
  *
  * Any tile except the last one may be left unsent, and these gaps will be populated by zeroes.
  *
  * If the last tile is sent and the output buffer is not full, HYD_OK is returned. Any return value other than
  * HYD_NEED_MORE_OUTPUT or HYD_OK is an error.
+ *
+ * The sample format may vary from tile to tile. Internally, libhydrium will scale uint8_t samples, assumed to be
+ * full-range between 0 and 255, to float values between 0.0 and 1.0. uint16_t samples will be scaled from the full
+ * range of 0 to 65535, to float values between 0.0 and 1.0. To pass out-of-gamut colors you must pass float samples
+ * less than 0.0 or more than 1.0, as float samples when passed are not rescaled. However, it is undefined behavior
+ * to pass infinite or NaN float samples.
  *
  * @param encoder A HYDEncoder struct.
  * @param buffer An array of three buffers of pixel data.
@@ -228,6 +267,8 @@ HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint
  * @param tile_y The Y-coordinate, in tiles, of the encoded tile.
  * @param row_stride The line size of the pixel buffer.
  * @param pixel_stride The inter-pixel stride of the buffer.
+ * @param is_last A flag indicating whether the sent tile is the last one.
+ * @param sample_fmt The sample format of the provided buffer.
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const void *const buffer[3],
                                            uint32_t tile_x, uint32_t tile_y, ptrdiff_t row_stride,

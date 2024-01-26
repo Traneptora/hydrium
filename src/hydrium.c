@@ -378,7 +378,7 @@ int main(int argc, const char *argv[]) {
                 ret = hyd_send_tile(encoder, rgb, x, y, -buffer_stride / 4, 3, y == 0 && x == tile_width - 1,
                         HYD_FLOAT32);
             }
-            if (ret != HYD_NEED_MORE_OUTPUT && ret < HYD_ERROR_START)
+            if (ret < HYD_ERROR_START)
                 goto done;
             do {
                 ret = hyd_flush(encoder);
