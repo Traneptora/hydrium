@@ -38,6 +38,7 @@ ldflags += cc.get_supported_link_arguments(wanted_ldflags)
 
 libhydrium_sources = files(
     'src/libhydrium/bitwriter.c',
+    'src/libhydrium/cluster-map.c',
     'src/libhydrium/encoder.c',
     'src/libhydrium/entropy.c',
     'src/libhydrium/libhydrium.c',
