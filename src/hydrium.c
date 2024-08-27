@@ -2,7 +2,8 @@
  * Hydrium basic implementation
  */
 
-#ifdef _MSC_VER
+#ifdef _WIN32
+    #include <fcntl.h>
     #include <io.h>
     #define hyd_isatty(f) _isatty(_fileno(f))
 #else
@@ -150,6 +151,12 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "%s: error opening file: %s\n", argv[0], in_fname);
             goto done;
         }
+#ifdef _WIN32
+    } else {
+        ret = _setmode(_fileno(fin), _O_BINARY);
+        if (ret)
+            goto done;
+#endif
     }
 
     struct spng_ihdr ihdr;
@@ -305,6 +312,12 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "%s: error opening file for writing: %s\n", argv[0], out_fname);
             goto done;
         }
+#ifdef _WIN32
+    } else {
+        ret = _setmode(_fileno(fout), _O_BINARY);
+        if (ret)
+            goto done;
+#endif
     }
 
     if (hyd_isatty(fout)) {
