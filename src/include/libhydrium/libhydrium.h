@@ -22,7 +22,7 @@
 /*
  * Point release, following semantic versioning.
  */
-#define HYDRIUM_VERSION_POINT 1
+#define HYDRIUM_VERSION_POINT 2
 
 /*
  * Compute the numeric version. Used to compare version numbers directly
