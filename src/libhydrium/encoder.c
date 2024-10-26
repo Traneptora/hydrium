@@ -377,7 +377,7 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     encoder->last_tile = is_last < 0 ?
         (tile_x + 1) * (lf_group->tile_count_x << 8) >= encoder->metadata.width &&
         (tile_y + 1) * (lf_group->tile_count_y << 8) >= encoder->metadata.height
-            : is_last;
+            : !!is_last;
 
     if (encoder->writer.overflow_state)
         return encoder->writer.overflow_state;
@@ -906,6 +906,18 @@ static HYDStatusCode populate_xyb_buffer(HYDEncoder *encoder, const void *const 
 
             rgb_to_xyb(rgb, &encoder->xyb[3 * (row + x)].f);
         }
+        const size_t residue_x = encoder->lf_group[lf_group_id].lf_group_width & 0x7u;
+        if (residue_x) {
+            memset(&encoder->xyb[3 * (row + encoder->lf_group[lf_group_id].lf_group_width)], 0,
+                3 * (8 - residue_x) * sizeof(XYBEntry));
+        }
+    }
+
+    const size_t residue_y = encoder->lf_group[lf_group_id].lf_group_height & 0x7u;
+    if (residue_y) {
+        memset(&encoder->xyb[3 * (encoder->lf_group[lf_group_id].lf_group_height
+            * encoder->lf_group[lf_group_id].stride)], 0,
+            3 * (8 - residue_y) * encoder->lf_group[lf_group_id].stride * sizeof(XYBEntry));
     }
 
     return HYD_OK;
