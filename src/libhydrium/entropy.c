@@ -1034,7 +1034,7 @@ static HYDStatusCode append_state_flush(HYDAllocator *allocator, StateFlushChain
         if (!chain)
             return HYD_NOMEM;
         chain->state_flushes = hyd_mallocarray(allocator, 1 << 10, sizeof(StateFlush));
-        if (!chain->state_flushes){
+        if (!chain->state_flushes) {
             hyd_free(allocator, chain);
             return HYD_NOMEM;
         }
@@ -1043,7 +1043,10 @@ static HYDStatusCode append_state_flush(HYDAllocator *allocator, StateFlushChain
         chain->prev_chain = *flushes;
         *flushes = chain;
     }
-    (*flushes)->state_flushes[(*flushes)->pos++] = (StateFlush){token_index, value};
+    (*flushes)->state_flushes[(*flushes)->pos++] = (StateFlush){
+        .token_index = token_index,
+        .value = value
+    };
 
     return HYD_OK;
 }
@@ -1081,7 +1084,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         goto end;
     }
 
-    flushes->state_flushes = hyd_mallocarray(stream->allocator, 1024, sizeof(StateFlush));
+    flushes->state_flushes = hyd_mallocarray(stream->allocator, 1 << 10, sizeof(StateFlush));
     if (!flushes->state_flushes) {
         ret = HYD_NOMEM;
         goto end;
