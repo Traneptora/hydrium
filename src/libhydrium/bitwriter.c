@@ -24,7 +24,7 @@ HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buff
     return HYD_OK;
 }
 
-static void hyd_bitwriter_flush0(HYDBitWriter *bw) {
+static HYDStatusCode drain_cache(HYDBitWriter *bw) {
     while (bw->cache_bits >= 8) {
         uint8_t *buf = bw->buffer_pos >= bw->buffer_len ?
                        bw->overflow + bw->overflow_pos++ :
@@ -33,6 +33,23 @@ static void hyd_bitwriter_flush0(HYDBitWriter *bw) {
         bw->cache >>= 8;
         bw->cache_bits -= 8;
     }
+
+    if (bw->overflow_pos) {
+        if (bw->overflow_pos > sizeof(bw->overflow))
+            return HYD_INTERNAL_ERROR;
+        if (bw->realloc_func) {
+            bw->overflow_state = bw->realloc_func(bw->allocator, &bw->buffer, &bw->buffer_len);
+            if (bw->overflow_state < HYD_ERROR_START)
+                return bw->overflow_state;
+            memcpy(bw->buffer + bw->buffer_pos, bw->overflow, bw->overflow_pos);
+            bw->buffer_pos += bw->overflow_pos;
+            bw->overflow_pos = 0;
+        } else {
+            bw->overflow_state = HYD_NEED_MORE_OUTPUT;
+        }
+    }
+
+    return bw->overflow_state;
 }
 
 HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
@@ -45,19 +62,9 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {
         bw->cache_bits += bits;
         return bw->overflow_state;
     }
-    hyd_bitwriter_flush0(bw);
-    if (bw->overflow_pos) {
-        if (bw->realloc_func) {
-            bw->overflow_state = bw->realloc_func(bw->allocator, &bw->buffer, &bw->buffer_len);
-            if (bw->overflow_state < HYD_ERROR_START)
-                return bw->overflow_state;
-            memcpy(bw->buffer + bw->buffer_pos, bw->overflow, bw->overflow_pos);
-            bw->buffer_pos += bw->overflow_pos;
-            bw->overflow_pos = 0;
-        } else {
-            bw->overflow_state = HYD_NEED_MORE_OUTPUT;
-        }
-    }
+    HYDStatusCode ret = drain_cache(bw);
+    if (ret < HYD_ERROR_START)
+        return ret;
     return hyd_write(bw, value, bits);
 }
 
@@ -80,9 +87,11 @@ HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const U32Table *table, uint32_t va
 }
 
 HYDStatusCode hyd_bitwriter_flush(HYDBitWriter *bw) {
-    hyd_write_zero_pad(bw);
-    hyd_bitwriter_flush0(bw);
-    return bw->overflow_state;
+    HYDStatusCode ret;
+    ret = hyd_write_zero_pad(bw);
+    if (ret < HYD_ERROR_START)
+        return ret;
+    return drain_cache(bw);
 }
 
 HYDStatusCode hyd_write_u64(HYDBitWriter *bw, uint64_t value) {
