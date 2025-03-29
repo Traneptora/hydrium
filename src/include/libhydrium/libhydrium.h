@@ -18,11 +18,11 @@
 /*
  * Minor version, following semantic versioning.
  */
-#define HYDRIUM_VERSION_MINOR 4
+#define HYDRIUM_VERSION_MINOR 5
 /*
  * Point release, following semantic versioning.
  */
-#define HYDRIUM_VERSION_POINT 2
+#define HYDRIUM_VERSION_POINT 0
 
 /*
  * Compute the numeric version. Used to compare version numbers directly
