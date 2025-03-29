@@ -150,7 +150,7 @@ static size_t *calculate_toc_perm(HYDEncoder *encoder, size_t *toc_size) {
     *toc_size = num_frame_groups > 1 ? 2 + num_frame_groups + encoder->lf_groups_per_frame : 1;
     if (*toc_size <= 1)
         return NULL;
-    size_t *toc = hyd_mallocarray(&encoder->allocator, *toc_size << 1, sizeof(size_t));
+    size_t *toc = hyd_malloc_array(*toc_size << 1, sizeof(size_t));
     if (!toc)
         return NULL;
     toc[0] = 0; // LFGlobal
@@ -191,12 +191,12 @@ static size_t *get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size) {
     toc_perm = calculate_toc_perm(encoder, toc_size);
     if (!toc_perm)
         goto end;
-    temp = hyd_mallocarray(&encoder->allocator, *toc_size, sizeof(int32_t));
+    temp = hyd_malloc_array(*toc_size, sizeof(int32_t));
     if (!temp)
         goto end;
     for (size_t i = 0; i < *toc_size; i++)
         temp[i] = i;
-    lehmer = hyd_calloc(&encoder->allocator, *toc_size, sizeof(size_t));
+    lehmer = calloc(*toc_size, sizeof(size_t));
     if (!lehmer)
         goto end;
 
@@ -213,8 +213,8 @@ static size_t *get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size) {
     }
 
 end:
-    hyd_free(&encoder->allocator, toc_perm);
-    hyd_free(&encoder->allocator, temp);
+    hyd_freep(&toc_perm);
+    hyd_freep(&temp);
     return lehmer;
 }
 
@@ -300,7 +300,7 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
     /* permuted toc */
     if (toc_size > 1) {
         hyd_write_bool(bw, 1);
-        ret = hyd_entropy_init_stream(&toc_stream, &encoder->allocator, bw, 1 + toc_size, zerobuf,
+        ret = hyd_entropy_init_stream(&toc_stream, bw, 1 + toc_size, zerobuf,
                                         8, 0, 0, 0, &encoder->error);
         if (ret < HYD_ERROR_START)
             goto end;
@@ -323,7 +323,7 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
     encoder->wrote_frame_header = 1;
 
 end:
-    hyd_free(&encoder->allocator, lehmer);
+    hyd_freep(&lehmer);
     return ret;
 }
 
@@ -395,7 +395,7 @@ static HYDStatusCode send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_
     }
 
     size_t xyb_pixels = lf_group->lf_varblock_height * lf_group->lf_varblock_width * 64;
-    XYBEntry *temp_xyb = hyd_reallocarray(&encoder->allocator, encoder->xyb, 3 * xyb_pixels, sizeof(XYBEntry));
+    XYBEntry *temp_xyb = hyd_realloc_array(encoder->xyb, 3 * xyb_pixels, sizeof(XYBEntry));
     if (!temp_xyb)
         return HYD_NOMEM;
     encoder->xyb = temp_xyb;
@@ -435,7 +435,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
 
     // write MA Tree
     HYDEntropyStream stream;
-    ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, hyd_array_size(lf_ma_tree),
+    ret = hyd_entropy_init_stream(&stream, bw, hyd_array_size(lf_ma_tree),
                                   zerobuf, 6, 0, 0, 0, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
@@ -450,7 +450,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
         return ret;
 
     size_t nb_blocks = lf_group->lf_varblock_width * lf_group->lf_varblock_height;
-    ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, 3 * nb_blocks, zerobuf,
+    ret = hyd_entropy_init_stream(&stream, bw, 3 * nb_blocks, zerobuf,
                                   1, 1, 1 << 14, 1, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
@@ -482,7 +482,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
         return ret;
     hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
     hyd_write(bw, 0x2, 4);
-    ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, 5, zerobuf,
+    ret = hyd_entropy_init_stream(&stream, bw, 5, zerobuf,
                                   6, 0, 0, 0, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
@@ -497,8 +497,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     size_t cfl_height = (lf_group->lf_varblock_height + 7) >> 3;
     size_t num_z_pre = 2 * cfl_width * cfl_height + nb_blocks;
     size_t num_sym = num_z_pre + 2 * nb_blocks;
-    ret = hyd_entropy_init_stream(&stream, &encoder->allocator, bw, num_sym, zerobuf,
-        1, 0, 29, 1, &encoder->error);
+    ret = hyd_entropy_init_stream(&stream, bw, num_sym, zerobuf, 1, 0, 29, 1, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
     for (size_t i = 0; i < num_z_pre; i++)
@@ -631,9 +630,9 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
     return encoder->working_writer.overflow_state;
 }
 
-static HYDStatusCode realloc_working_buffer(HYDAllocator *allocator, uint8_t **buffer, size_t *buffer_size) {
+static HYDStatusCode realloc_working_buffer(uint8_t **buffer, size_t *buffer_size) {
     size_t new_size = *buffer_size << 1;
-    uint8_t *new_buffer = hyd_realloc(allocator, *buffer, new_size);
+    uint8_t *new_buffer = realloc(*buffer, new_size);
     if (!new_buffer)
         return HYD_NOMEM;
     *buffer = new_buffer;
@@ -647,7 +646,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     HYDStatusCode ret = HYD_OK;
     int need_buffer_init = !encoder->working_writer.buffer || !encoder->one_frame;
     if (!encoder->working_writer.buffer) {
-        encoder->working_writer.buffer = hyd_malloc(&encoder->allocator, 1 << 12);
+        encoder->working_writer.buffer = malloc(1 << 12);
         if (!encoder->working_writer.buffer) {
             ret = HYD_NOMEM;
             goto end;
@@ -658,7 +657,6 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
         ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_writer.buffer,
                                    encoder->working_writer.buffer_len, 0, 0);
         encoder->copy_pos = 0;
-        encoder->working_writer.allocator = &encoder->allocator;
         encoder->working_writer.realloc_func = &realloc_working_buffer;
     }
 
@@ -674,7 +672,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     size_t frame_groups_x = ((frame_w + 255) >> 8);
     size_t num_frame_groups = frame_groups_x * frame_groups_y;
     const size_t num_groups = ((lf_group->lf_group_width + 255) >> 8) * ((lf_group->lf_group_height + 255) >> 8);
-    non_zeroes = hyd_calloc(&encoder->allocator, 3072, num_groups);
+    non_zeroes = calloc(3072, num_groups);
     if (!non_zeroes) {
         ret = HYD_NOMEM;
         goto end;
@@ -722,8 +720,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
 
     if (!encoder->tiles_sent) {
         if (num_frame_groups > 1) {
-            encoder->section_endpos = hyd_calloc(&encoder->allocator, 2 + encoder->lf_groups_per_frame +
-                num_frame_groups, sizeof(size_t));
+            encoder->section_endpos = calloc(2 + encoder->lf_groups_per_frame + num_frame_groups, sizeof(size_t));
             if (!encoder->section_endpos) {
                 ret = HYD_NOMEM;
                 goto end;
@@ -750,7 +747,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     if (!encoder->tiles_sent) {
         const size_t num_syms = 1 << 12;
         memset(&encoder->hf_stream, 0, sizeof(HYDEntropyStream));
-        ret = hyd_entropy_init_stream(&encoder->hf_stream, &encoder->allocator, &encoder->working_writer,
+        ret = hyd_entropy_init_stream(&encoder->hf_stream, &encoder->working_writer,
                                 num_syms, hf_cluster_map, 7425, 1, 0, 0, &encoder->error);
         if (ret < HYD_ERROR_START)
             goto end;
@@ -760,7 +757,7 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     }
 
     if (!encoder->hf_stream_barrier)
-        encoder->hf_stream_barrier = hyd_calloc(&encoder->allocator, num_frame_groups, sizeof(size_t));
+        encoder->hf_stream_barrier = calloc(num_frame_groups, sizeof(size_t));
     if (!encoder->hf_stream_barrier) {
         ret = HYD_NOMEM;
         goto end;
@@ -830,11 +827,11 @@ static HYDStatusCode encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_
     encoder->wrote_frame_header = 0;
     ret = hyd_flush(encoder);
     hyd_entropy_stream_destroy(&encoder->hf_stream);
-    hyd_freep(&encoder->allocator, &encoder->section_endpos);
-    hyd_freep(&encoder->allocator, &encoder->hf_stream_barrier);
+    hyd_freep(&encoder->section_endpos);
+    hyd_freep(&encoder->hf_stream_barrier);
 
 end:
-    hyd_free(&encoder->allocator, non_zeroes);
+    hyd_freep(&non_zeroes);
     return ret;
 }
 

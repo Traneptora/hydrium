@@ -19,8 +19,6 @@ HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buff
     bw->overflow_state = HYD_OK;
     memset(bw->overflow, 0, sizeof(bw->overflow));
     bw->overflow_pos = 0;
-    bw->realloc_func = NULL;
-    bw->allocator = NULL;
     return HYD_OK;
 }
 
@@ -38,7 +36,7 @@ static HYDStatusCode drain_cache(HYDBitWriter *bw) {
         if (bw->overflow_pos > sizeof(bw->overflow))
             return HYD_INTERNAL_ERROR;
         if (bw->realloc_func) {
-            bw->overflow_state = bw->realloc_func(bw->allocator, &bw->buffer, &bw->buffer_len);
+            bw->overflow_state = bw->realloc_func(&bw->buffer, &bw->buffer_len);
             if (bw->overflow_state < HYD_ERROR_START)
                 return bw->overflow_state;
             memcpy(bw->buffer + bw->buffer_pos, bw->overflow, bw->overflow_pos);

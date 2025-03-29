@@ -106,20 +106,6 @@ typedef enum HYDSampleFormat {
     HYD_FLOAT32,
 } HYDSampleFormat;
 
-typedef struct HYDAllocator {
-    void *opaque;
-    void *(*malloc_func)(size_t size, void *opaque);
-    void *(*calloc_func)(size_t nmemb, size_t size, void *opaque);
-    void *(*realloc_func)(void *ptr, size_t size, void *opaque);
-    void (*free_func)(void *ptr, void *opaque);
-} HYDAllocator;
-
-typedef struct HYDMemoryProfiler {
-    size_t total_alloced;
-    size_t current_alloced;
-    size_t max_alloced;
-} HYDMemoryProfiler;
-
 typedef struct HYDImageMetadata {
     /**
      * The width of the image, in pixels.
@@ -172,10 +158,9 @@ typedef struct HYDEncoder HYDEncoder;
 /**
  * @brief Allocate and return a fresh HYDEncoder struct.
  *
- * @param allocator The allocator to use, pass NULL for the default.
  * @return A new (HYDEncoder *) object upon success, NULL if the allocation fails.
  */
-HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator);
+HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(void);
 
 /**
  * @brief Deallocate and free all resources associated with the given encoder.
@@ -299,21 +284,6 @@ HYDRIUM_EXPORT HYDStatusCode hyd_release_output_buffer(HYDEncoder *encoder, size
  * @return HYD_OK upon success, a negative status code upon failure.
  */
 HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder);
-
-/**
- * @brief Allocate a new HYDAllocator that profiles memory used, stored in the given HYDMemoryProfiler.
- *
- * @param profiler a HYDMemoryProfiler struct used to contain the data for the profiling allocator
- * @return a HYDAllocator struct pointer upon success, NULL upon allocation failure.
- */
-HYDRIUM_EXPORT HYDAllocator *hyd_profiling_allocator_new(HYDMemoryProfiler *profiler);
-
-/**
- * @brief Deallocate a HYDAllocator that was allocated by hyd_profiling_allocator_new.
- *
- * @param allocator A HYDAllocator object to deallocate.
- */
-HYDRIUM_EXPORT void hyd_profiling_allocator_destroy(HYDAllocator *allocator);
 
 /**
  * @brief Returns a string description of the last error that occurred.

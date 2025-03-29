@@ -32,7 +32,6 @@ typedef struct HYDVLCElement {
 } HYDVLCElement;
 
 typedef struct HYDEntropyStream {
-    HYDAllocator *allocator;
     HYDBitWriter *bw;
     size_t num_dists;
     uint8_t *cluster_map;
@@ -64,7 +63,7 @@ typedef struct HYDEntropyStream {
     const char **error;
 } HYDEntropyStream;
 
-HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDAllocator *allocator, HYDBitWriter *bw,
+HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDBitWriter *bw,
                                       size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
                                       int custom_configs, uint32_t lz77_min_symbol, int modular, const char **error);
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,

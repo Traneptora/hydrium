@@ -10,42 +10,8 @@
 #include "internal.h"
 #include "memory.h"
 
-static void *malloc_default(size_t size, void *opaque) {
-    return malloc(size);
-}
-
-static void *calloc_default(size_t nmemb, size_t size, void *opaque) {
-    return calloc(nmemb, size);
-}
-
-static void *realloc_default(void *ptr, size_t size, void *opaque) {
-    return realloc(ptr, size);
-}
-
-static void free_default(void *ptr, void *opaque) {
-    free(ptr);
-}
-
-HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(const HYDAllocator *allocator) {
-    HYDEncoder *ret;
-
-    if (allocator)
-        ret = allocator->calloc_func(1, sizeof(HYDEncoder), allocator->opaque);
-    else
-        ret = calloc(1, sizeof(HYDEncoder));
-    if (!ret)
-        return NULL;
-
-    if (allocator) {
-        ret->allocator = *allocator;
-    } else {
-        ret->allocator.opaque = NULL;
-        ret->allocator.malloc_func = &malloc_default;
-        ret->allocator.calloc_func = &calloc_default;
-        ret->allocator.realloc_func = &realloc_default;
-        ret->allocator.free_func = &free_default;
-    }
-
+HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(void) {
+    HYDEncoder *ret = calloc(1, sizeof(HYDEncoder));
     return ret;
 }
 
@@ -53,13 +19,17 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     if (!encoder)
         return HYD_OK;
     hyd_entropy_stream_destroy(&encoder->hf_stream);
-    hyd_free(&encoder->allocator, encoder->section_endpos);
-    hyd_free(&encoder->allocator, encoder->hf_stream_barrier);
-    hyd_free(&encoder->allocator, encoder->working_writer.buffer);
-    hyd_free(&encoder->allocator, encoder->xyb);
-    hyd_free(&encoder->allocator, encoder->lf_group);
-    hyd_free(&encoder->allocator, encoder->lf_group_perm);
-    hyd_free(&encoder->allocator, encoder);
+    hyd_freep(&encoder->section_endpos);
+    hyd_freep(&encoder->hf_stream_barrier);
+    hyd_freep(&encoder->working_writer.buffer);
+    hyd_freep(&encoder->xyb);
+    hyd_freep(&encoder->lf_group);
+    hyd_freep(&encoder->lf_group_perm);
+    hyd_freep(&encoder->lut_8bit[0]);
+    hyd_freep(&encoder->lut_8bit[1]);
+    hyd_freep(&encoder->lut_16bit[0]);
+    hyd_freep(&encoder->lut_16bit[1]);
+    hyd_freep(&encoder);
     return HYD_OK;
 }
 
@@ -100,15 +70,13 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     encoder->lf_group_count_x = (metadata->width + 2047) >> 11;
     encoder->lf_group_count_y = (metadata->height + 2047) >> 11;
     encoder->lf_groups_per_frame = encoder->one_frame ? encoder->lf_group_count_x * encoder->lf_group_count_y : 1;
-    void *temp = hyd_reallocarray(&encoder->allocator, encoder->lf_group,
-        encoder->lf_groups_per_frame, sizeof(HYDLFGroup));
+    void *temp = hyd_realloc_array(encoder->lf_group, encoder->lf_groups_per_frame, sizeof(HYDLFGroup));
     if (!temp)
         return HYD_NOMEM;
     encoder->lf_group = temp;
 
     if (encoder->one_frame) {
-        temp = hyd_reallocarray(&encoder->allocator, encoder->lf_group_perm,
-            encoder->lf_groups_per_frame, sizeof(size_t));
+        temp = hyd_realloc_array(encoder->lf_group_perm, encoder->lf_groups_per_frame, sizeof(size_t));
         if (!temp)
             return HYD_NOMEM;
         encoder->lf_group_perm = temp;

@@ -15,8 +15,7 @@ typedef struct HYDBitWriter {
     uint8_t overflow[32];
     size_t overflow_pos;
     int overflow_state;
-    HYDAllocator *allocator;
-    HYDStatusCode (*realloc_func)(HYDAllocator *allocator, uint8_t **buffer, size_t *buffer_len);
+    HYDStatusCode (*realloc_func)(uint8_t **buffer, size_t *buffer_len);
 } HYDBitWriter;
 
 typedef struct U32Table {

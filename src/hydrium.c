@@ -70,10 +70,8 @@ int main(int argc, const char *argv[]) {
     uint64_t width = 0, height = 0;
     void *buffer = NULL, *output_buffer = NULL;
     HYDEncoder *encoder = NULL;
-    HYDAllocator *allocator = NULL;
     int ret = 1;
     FILE *fout = stdout, *fin = stdin;
-    HYDMemoryProfiler profiler = { 0 };
     const char *error_msg = NULL;
     spng_ctx *spng_context = NULL;
 
@@ -294,13 +292,7 @@ int main(int argc, const char *argv[]) {
         }
     }
 
-    allocator = hyd_profiling_allocator_new(&profiler);
-    if (!allocator) {
-        fprintf(stderr, "%s: error allocating encoder\n", argv[0]);
-        goto done;
-    }
-
-    encoder = hyd_encoder_new(allocator);
+    encoder = hyd_encoder_new();
     if (!encoder) {
         fprintf(stderr, "%s: error allocating encoder\n", argv[0]);
         goto done;
@@ -424,13 +416,10 @@ done:
     }
     free(buffer);
     free(output_buffer);
-    hyd_profiling_allocator_destroy(allocator);
     if (ret < HYD_ERROR_START)
         fprintf(stderr, "Hydrium error occurred. Error code: %d\n", ret);
     if (error_msg && *error_msg)
         fprintf(stderr, "Error message: %s\n", error_msg);
-    if (!ret)
-        fprintf(stderr, "Max libhydrium heap memory: %zu bytes\n", profiler.max_alloced);
 
     return ret;
 }

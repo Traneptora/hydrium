@@ -4,6 +4,7 @@
 #ifndef HYDRIUM_INTERNAL_H_
 #define HYDRIUM_INTERNAL_H_
 
+
 #include "bitwriter.h"
 #include "entropy.h"
 #include "libhydrium/libhydrium.h"
@@ -27,7 +28,6 @@ typedef union XYBEntry {
 
 /* opaque structure */
 struct HYDEncoder {
-    HYDAllocator allocator;
     HYDImageMetadata metadata;
     HYDEntropyStream hf_stream;
 
