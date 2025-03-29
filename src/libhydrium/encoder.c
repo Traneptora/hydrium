@@ -862,9 +862,41 @@ static inline void rgb_to_xyb(const float rgb[3], float *xyb) {
     xyb[2] = sgamma - y;
 }
 
+static HYDStatusCode populate_lut(float **lut, const size_t size, const int linear) {
+    if (*lut)
+        return HYD_OK;
+    *lut = hyd_malloc_array(size, sizeof(float));
+    if (!*lut)
+        return HYD_NOMEM;
+    const float factor = (1.0f / (size - 1.0f));
+    if (linear) {
+        for (size_t i = 0; i < size; i++)
+            (*lut)[i] = linearize(i * factor);
+    } else {
+        for (size_t i = 0; i < size; i++)
+            (*lut)[i] = i * factor;
+    }
+
+    return HYD_OK;
+}
+
 static HYDStatusCode populate_xyb_buffer(HYDEncoder *encoder, const void *const buffer[3],
         ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id,
         HYDSampleFormat sample_fmt) {
+    int need_linearize = !encoder->metadata.linear_light;
+    float *lut;
+    HYDStatusCode ret;
+    if (sample_fmt == HYD_UINT8) {
+        ret = populate_lut(&encoder->lut_8bit[need_linearize], 256, need_linearize);
+        if (ret < HYD_ERROR_START)
+            return ret;
+        lut = encoder->lut_8bit[need_linearize];
+    } else if (sample_fmt == HYD_UINT16) {
+        ret = populate_lut(&encoder->lut_16bit[need_linearize], 65536, need_linearize);
+        if (ret < HYD_ERROR_START)
+            return ret;
+        lut = encoder->lut_16bit[need_linearize];
+    }
     for (size_t y = 0; y < encoder->lf_group[lf_group_id].lf_group_height; y++) {
         const ptrdiff_t y_off = y * row_stride;
         const size_t row = y * encoder->lf_group[lf_group_id].stride;
@@ -873,14 +905,14 @@ static HYDStatusCode populate_xyb_buffer(HYDEncoder *encoder, const void *const 
             float rgb[3];
             switch (sample_fmt) {
                 case HYD_UINT8:
-                    rgb[0] = ((uint8_t *)buffer[0])[offset] * (1.0f / 255.0f);
-                    rgb[1] = ((uint8_t *)buffer[1])[offset] * (1.0f / 255.0f);
-                    rgb[2] = ((uint8_t *)buffer[2])[offset] * (1.0f / 255.0f);
+                    rgb[0] = lut[((uint8_t *)buffer[0])[offset]];
+                    rgb[1] = lut[((uint8_t *)buffer[1])[offset]];
+                    rgb[2] = lut[((uint8_t *)buffer[2])[offset]];
                     break;
                 case HYD_UINT16:
-                    rgb[0] = ((uint16_t *)buffer[0])[offset] * (1.0f / 65535.0f);
-                    rgb[1] = ((uint16_t *)buffer[1])[offset] * (1.0f / 65535.0f);
-                    rgb[2] = ((uint16_t *)buffer[2])[offset] * (1.0f / 65535.0f);
+                    rgb[0] = lut[((uint16_t *)buffer[0])[offset]];
+                    rgb[1] = lut[((uint16_t *)buffer[1])[offset]];
+                    rgb[2] = lut[((uint16_t *)buffer[2])[offset]];
                     break;
                 case HYD_FLOAT32:
                     rgb[0] = ((float *)buffer[0])[offset];
@@ -890,17 +922,16 @@ static HYDStatusCode populate_xyb_buffer(HYDEncoder *encoder, const void *const 
                         encoder->error = "Invalid NaN Float";
                         return HYD_API_ERROR;
                     }
+                    if (need_linearize) {
+                        rgb[0] = linearize(rgb[0]);
+                        rgb[1] = linearize(rgb[1]);
+                        rgb[2] = linearize(rgb[2]);
+                    }
                     break;
                 default:
                     encoder->error = "Invalid Sample Format";
                     return HYD_INTERNAL_ERROR;
             }
-            if (!encoder->metadata.linear_light) {
-                rgb[0] = linearize(rgb[0]);
-                rgb[1] = linearize(rgb[1]);
-                rgb[2] = linearize(rgb[2]);
-            }
-
             rgb_to_xyb(rgb, &encoder->xyb[3 * (row + x)].f);
         }
         const size_t residue_x = encoder->lf_group[lf_group_id].lf_group_width & 0x7u;
