@@ -22,6 +22,7 @@ wanted_cflags = [
     '-fvisibility=hidden',
     '-ffp-contract=fast',
     '-fallow-store-data-races',
+    '-Wmissing-prototypes',
 ]
 
 ldflags = []
