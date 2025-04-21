@@ -5,8 +5,7 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #define hyd_fllog2(n) (__builtin_clzll(1) - __builtin_clzll((n)|1))
-#else
-#ifdef _MSC_VER
+#elif defined(_MSC_VER)
 #include <inttrin.h>
 static inline int __builtin_clzll(const unsigned long long x) {
 #ifdef _WIN64
@@ -43,8 +42,7 @@ static inline int hyd_fllog2(unsigned long long n) {
         ++i;
     return i;
 }
-#endif /* _MSC_VER */
-#endif /* __GNUC__ || __clang__ */
+#endif /* __GNUC__ || __clang__ || _MSC_VER */
 
 /* ceil(log2(n)) */
 static inline int hyd_cllog2(const unsigned long long n) {
