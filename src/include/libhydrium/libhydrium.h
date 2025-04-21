@@ -111,10 +111,12 @@ typedef struct HYDImageMetadata {
      * The width of the image, in pixels.
      */
     size_t width;
+
     /**
      * The height of the image, in pixels.
      */
     size_t height;
+
     /**
      * A flag indicating whether the input data is in Linear Light. If true, the input
      * is treated as linear-light. If false, the input is treated as sRGB.

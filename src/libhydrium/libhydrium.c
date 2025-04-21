@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "encoder.h"
+#include "format.h"
 #include "internal.h"
 #include "memory.h"
 
@@ -151,4 +153,37 @@ HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder) {
 
 HYDRIUM_EXPORT const char *hyd_error_message_get(HYDEncoder *encoder) {
     return encoder->error;
+}
+
+HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const void *const buffer[3],
+    uint32_t tile_x, uint32_t tile_y, ptrdiff_t row_stride,
+    ptrdiff_t pixel_stride, int is_last, HYDSampleFormat sample_fmt) {
+    HYDStatusCode ret;
+
+    if (sample_fmt != HYD_UINT8 && sample_fmt != HYD_UINT16 && sample_fmt != HYD_FLOAT32) {
+        encoder->error = "Invalid Sample Format";
+        return HYD_API_ERROR;
+    }
+
+    ret = hyd_send_tile_pre(encoder, tile_x, tile_y, is_last);
+    if (ret < HYD_ERROR_START)
+        return ret;
+
+    size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
+
+    ret = hyd_populate_xyb_buffer(encoder, buffer, row_stride, pixel_stride, lfid, sample_fmt);
+    if (ret < HYD_ERROR_START)
+        return ret;
+
+    if (encoder->one_frame)
+        encoder->lf_group_perm[encoder->tiles_sent] = lfid;
+
+    ret = hyd_encode_xyb_buffer(encoder, tile_x, tile_y);
+    if (ret < HYD_ERROR_START)
+        return ret;
+
+    if (encoder->one_frame)
+        encoder->tiles_sent++;
+
+    return HYD_OK;
 }

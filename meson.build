@@ -40,6 +40,7 @@ libhydrium_sources = files(
     'src/libhydrium/cluster-map.c',
     'src/libhydrium/encoder.c',
     'src/libhydrium/entropy.c',
+    'src/libhydrium/format.c',
     'src/libhydrium/libhydrium.c',
     'src/libhydrium/memory.c',
 )
