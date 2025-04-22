@@ -67,7 +67,7 @@ static const size_t hf_block_cluster_map[39] = {
     7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,
 };
 
-static const float hf_quant_weights[3][64] = {
+static const int32_t hf_quant_weights[3][64] = {
     {
         1969, 1969, 1969, 1962, 1969, 1962, 1655, 1885, 1885, 1655, 1397, 1610, 1704, 1610, 1397, 1178,
         1368, 1494, 1494, 1368, 1178,  994, 1159, 1289, 1340, 1289, 1159,  994,  839,  980, 1104, 1178,
@@ -396,7 +396,7 @@ HYDStatusCode hyd_send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t t
     }
 
     size_t xyb_pixels = lf_group->lf_varblock_height * lf_group->lf_varblock_width * 64;
-    XYBEntry *temp_xyb = hyd_realloc_array(encoder->xyb, 3 * xyb_pixels, sizeof(XYBEntry));
+    XYBEntry *temp_xyb = hyd_realloc_array(encoder->xyb, xyb_pixels, sizeof(XYBEntry));
     if (!temp_xyb)
         return HYD_NOMEM;
     encoder->xyb = temp_xyb;
@@ -466,16 +466,16 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
             const size_t row = lf_group->stride * y;
             for (size_t vx = 0; vx < lf_group->lf_varblock_width; vx++) {
                 const size_t x = vx << 3;
-                XYBEntry *xyb = encoder->xyb + ((row + x) * 3 + c);
-                xyb->i = (int32_t)(xyb->f * shift[c]);
-                const int32_t w = x > 0 ? (xyb - 24)->i : y > 0 ? (xyb - 24 * lf_group->stride)->i : 0;
-                const int32_t n = y > 0 ? (xyb - 24 * lf_group->stride)->i : w;
-                const int32_t nw = x > 0 && y > 0 ? (xyb - 24 * (lf_group->stride + 1))->i : w;
+                XYBEntry *xyb = &encoder->xyb[row + x];
+                xyb->xyb[c].i = xyb->xyb[c].f * shift[c];
+                const int32_t w = x > 0 ? xyb[-8].xyb[c].i : y > 0 ? xyb[-(lf_group->stride << 3)].xyb[c].i : 0;
+                const int32_t n = y > 0 ? xyb[-(lf_group->stride << 3)].xyb[c].i : w;
+                const int32_t nw = x > 0 && y > 0 ? xyb[-((lf_group->stride + 1) << 3)].xyb[c].i : w;
                 const int32_t vp = w + n - nw;
                 const int32_t min = hyd_min(w, n);
                 const int32_t max = hyd_max(w, n);
                 const int32_t v = hyd_clamp(vp, min, max);
-                hyd_entropy_send_symbol(&stream, 0, hyd_pack_signed(xyb->i - v));
+                hyd_entropy_send_symbol(&stream, 0, hyd_pack_signed(xyb->xyb[c].i - v));
             }
         }
     }
@@ -523,13 +523,13 @@ static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
                 size_t vx = bx << 3;
                 for (size_t y = 0; y < 8; y++) {
                     const size_t posy = (vy + y) * lf_group->stride + vx;
-                    scratchblock[0][y][0] = encoder->xyb[posy * 3 + c].f;
+                    scratchblock[0][y][0] = encoder->xyb[posy].xyb[c].f;
                     for (size_t x = 1; x < 8; x++)
-                        scratchblock[0][y][0] += encoder->xyb[(posy + x) * 3 + c].f;
+                        scratchblock[0][y][0] += encoder->xyb[posy + x].xyb[c].f;
                     scratchblock[0][y][0] *= 0.125f;
                     for (size_t k = 1; k < 8; k++) {
                         for (size_t n = 0; n < 8; n++)
-                            scratchblock[0][y][k] += encoder->xyb[(posy + n) * 3 + c].f * cosine_lut[k - 1][n];
+                            scratchblock[0][y][k] += encoder->xyb[posy + n].xyb[c].f * cosine_lut[k - 1][n];
                     }
                 }
                 for (size_t x = 0; x < 8; x++) {
@@ -545,7 +545,7 @@ static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
                 for (size_t y = 0; y < 8; y++) {
                     size_t posy = (vy + y) * lf_group->stride + vx;
                     for (size_t x = 0; x < 8; x++)
-                        encoder->xyb[(posy + x) * 3 + c].f = scratchblock[1][x][y];
+                        encoder->xyb[posy + x].xyb[c].f = scratchblock[1][x][y];
                 }
             }
         }
@@ -609,10 +609,10 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                             IntPos prev_pos = natural_order[k];
                             const size_t prev_pos_s = (vy + prev_pos.y) * lf_group->stride + (vx + prev_pos.x);
                             const size_t pos_s = (vy + pos.y) * lf_group->stride + (vx + pos.x);
-                            int prev = k ? !!encoder->xyb[prev_pos_s * 3 + c].i : non_zero_count <= 4;
+                            int prev = k ? !!encoder->xyb[prev_pos_s].xyb[c].i : non_zero_count <= 4;
                             size_t coeff_context = hist_context + prev +
                                 ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k + 1]) << 1);
-                            uint32_t value = hyd_pack_signed(encoder->xyb[pos_s * 3 + c].i);
+                            uint32_t value = hyd_pack_signed(encoder->xyb[pos_s].xyb[c].i);
                             ret = hyd_entropy_send_symbol(stream, coeff_context, value);
                             symbol_count[gindex]++;
                             if (ret < HYD_ERROR_START)
@@ -703,10 +703,10 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
                         for (int j = 1; j < 64; j++) {
                             const size_t py = vy + natural_order[j].y;
                             const size_t px = vx + natural_order[j].x;
-                            XYBEntry *xyb = encoder->xyb + ((py * lf_pad_w + px) * 3 + i);
-                            const int32_t q = (int32_t)(xyb->f * hf_quant_weights[i][j] * (float)hf_mult);
-                            xyb->i = hyd_abs(q) < 2 ? 0 : q;
-                            if (xyb->i) {
+                            XYBEntry *xyb = &encoder->xyb[py * lf_pad_w + px];
+                            const int32_t q = (int32_t)(xyb->xyb[i].f * (hf_quant_weights[i][j] * hf_mult));
+                            xyb->xyb[i].i = hyd_abs(q) < 2 ? 0 : q;
+                            if (xyb->xyb[i].i) {
                                 non_zeroes[((gindex << 10) + by * gbw + bx) * 3 + i]++;
                                 nzc = j;
                             }

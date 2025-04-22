@@ -4,10 +4,11 @@
 #ifndef HYDRIUM_INTERNAL_H_
 #define HYDRIUM_INTERNAL_H_
 
+#include "libhydrium/libhydrium.h"
 
 #include "bitwriter.h"
 #include "entropy.h"
-#include "libhydrium/libhydrium.h"
+#include "format.h"
 
 typedef struct HYDLFGroup {
     size_t tile_count_x;
@@ -21,9 +22,11 @@ typedef struct HYDLFGroup {
     size_t stride;
 } HYDLFGroup;
 
-typedef union XYBEntry {
-    float f;
-    int32_t i;
+typedef struct XYBEntry {
+    union {
+        int32_t i;
+        float f;
+    } xyb[3];
 } XYBEntry;
 
 /* opaque structure */
@@ -63,8 +66,8 @@ struct HYDEncoder {
 
     const char *error;
 
-    float *lut_8bit[2];
-    float *lut_16bit[2];
+    float *input_lut8;
+    float *input_lut16;
 };
 
 HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group, uint32_t tile_x, uint32_t tile_y);
