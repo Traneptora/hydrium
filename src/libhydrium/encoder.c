@@ -473,7 +473,8 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
                 const int32_t nw = x > 0 && y > 0 ? xyb[-((lf_group->stride + 1) << 3)].xyb[c].i : w;
                 const int32_t vp = w + n - nw;
                 const int32_t min = hyd_min(w, n);
-                const int32_t max = hyd_max(w, n);
+                /* a ^ b ^ c, when c == a or c == b, gives the other one */
+                const int32_t max = w ^ n ^ min;
                 const int32_t v = hyd_clamp(vp, min, max);
                 hyd_entropy_send_symbol(&stream, 0, hyd_pack_signed(xyb->xyb[c].i - v));
             }
