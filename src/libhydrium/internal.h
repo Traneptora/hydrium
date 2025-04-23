@@ -66,8 +66,9 @@ struct HYDEncoder {
 
     const char *error;
 
-    float *input_lut8;
-    float *input_lut16;
+    uint16_t *input_lut8;
+    uint16_t *input_lut16;
+    float *bias_cbrtf_lut;
 };
 
 HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group, uint32_t tile_x, uint32_t tile_y);

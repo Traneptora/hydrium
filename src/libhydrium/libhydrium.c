@@ -29,6 +29,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     hyd_freep(&encoder->lf_group_perm);
     hyd_freep(&encoder->input_lut8);
     hyd_freep(&encoder->input_lut16);
+    hyd_freep(&encoder->bias_cbrtf_lut);
     hyd_freep(&encoder);
     return HYD_OK;
 }
