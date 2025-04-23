@@ -26,7 +26,7 @@ static inline float hyd_cbrtf(const float x) {
     return 1.0f / z.f;
 }
 
-static inline HYDrgb3f32_t rgb_to_xyb_float32(const float *rgb) {
+static inline HYDrgb3f32_t rgb_to_xyb_f32(const float *rgb) {
     const float lgamma = hyd_cbrtf(0.3f * rgb[0] + 0.622f * rgb[1] + 0.078f * rgb[2]
         + 0.0037930732552754493f) - 0.155954f;
     const float mgamma = hyd_cbrtf(0.23f * rgb[0] + 0.692f * rgb[1] + 0.078f * rgb[2]
@@ -111,7 +111,7 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buf
                     encoder->error = "Invalid Sample Format";
                     return HYD_INTERNAL_ERROR;
             }
-            HYDrgb3f32_t xyb = rgb_to_xyb_float32(rgb);
+            HYDrgb3f32_t xyb = rgb_to_xyb_f32(rgb);
             entry->xyb[0].f = xyb.r;
             entry->xyb[1].f = xyb.g;
             entry->xyb[2].f = xyb.b;
