@@ -61,12 +61,9 @@ static HYDStatusCode populate_input_lut(uint16_t **lut, const size_t size, const
     if (!*lut)
         return HYD_NOMEM;
     const float factor = 1.0f / (size - 1.0f);
-    if (need_linearize) {
-        for (size_t i = 0; i < size; i++)
-            (*lut)[i] = f32_to_u16(linearize(i * factor));
-    } else {
-        for (size_t i = 0; i < size; i++)
-            (*lut)[i] = f32_to_u16(i * factor);
+    for (size_t i = 0; i < size; i++) {
+        const float f = i * factor;
+        (*lut)[i] = f32_to_u16(need_linearize ? linearize(f) : f);
     }
 
     return HYD_OK;
@@ -85,8 +82,8 @@ static HYDStatusCode populate_output_lut(float **lut, const size_t size) {
 }
 
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buffer[3],
-    ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id,
-    HYDSampleFormat sample_fmt) {
+        ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id,
+        HYDSampleFormat sample_fmt) {
     int need_linearize = !encoder->metadata.linear_light;
     uint16_t *input_lut;
     float *bias_lut;
