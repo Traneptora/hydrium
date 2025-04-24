@@ -143,8 +143,8 @@ static HYDStatusCode write_header(HYDEncoder *encoder) {
 }
 
 static size_t *calculate_toc_perm(HYDEncoder *encoder, size_t *toc_size) {
-    const size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->lf_group_width;
-    const size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->lf_group_height;
+    const size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->width;
+    const size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->height;
     const size_t frame_groups_x = (frame_w + 255) >> 8;
     const size_t frame_groups_y = (frame_h + 255) >> 8;
     const size_t num_frame_groups = frame_groups_x * frame_groups_y;
@@ -169,12 +169,12 @@ static size_t *calculate_toc_perm(HYDEncoder *encoder, size_t *toc_size) {
             toc[idx++] = 1 + encoder->lf_groups_per_frame; // HFGlobal
         size_t raster_lfid = encoder->lf_group_perm ? encoder->lf_group_perm[sent_lfid] : 0;
         const HYDLFGroup *lf_group = &encoder->lf_group[raster_lfid];
-        const size_t gcountx = (lf_group->lf_group_width + 255) >> 8;
-        const size_t gcounty = (lf_group->lf_group_height + 255) >> 8;
+        const size_t gcountx = (lf_group->width + 255) >> 8;
+        const size_t gcounty = (lf_group->height + 255) >> 8;
         const size_t gcount = gcountx * gcounty;
         for (size_t g = 0; g < gcount; g++) {
-            size_t gy = (encoder->one_frame ? (lf_group->lf_group_y << 3) : 0) + (g / gcountx);
-            size_t gx = (encoder->one_frame ? (lf_group->lf_group_x << 3) : 0) + (g % gcountx);
+            size_t gy = (encoder->one_frame ? (lf_group->y << 3) : 0) + (g / gcountx);
+            size_t gx = (encoder->one_frame ? (lf_group->x << 3) : 0) + (g % gcountx);
             toc[idx++] = 2 + encoder->lf_groups_per_frame + gy * frame_groups_x + gx;
         }
     }
@@ -232,8 +232,8 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
 
     int is_last = encoder->one_frame || encoder->last_tile;
     int have_crop = !encoder->one_frame &&
-        !(encoder->metadata.width <= encoder->lf_group->lf_group_width
-        && encoder->metadata.height <= encoder->lf_group->lf_group_height);
+        !(encoder->metadata.width <= encoder->lf_group->width
+        && encoder->metadata.height <= encoder->lf_group->height);
 
     /* all_default = 0 */
     hyd_write(bw, 0, 1);
@@ -257,10 +257,10 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
         // have_crop ==> !encoder->one_frame
         size_t frame_w = encoder->lf_group->tile_count_x << 8;
         size_t frame_h = encoder->lf_group->tile_count_y << 8;
-        hyd_write_u32(bw, &frame_size_u32, hyd_pack_signed(encoder->lf_group->lf_group_x * frame_w));
-        hyd_write_u32(bw, &frame_size_u32, hyd_pack_signed(encoder->lf_group->lf_group_y * frame_h));
-        hyd_write_u32(bw, &frame_size_u32, encoder->lf_group->lf_group_width);
-        hyd_write_u32(bw, &frame_size_u32, encoder->lf_group->lf_group_height);
+        hyd_write_u32(bw, &frame_size_u32, hyd_pack_signed(encoder->lf_group->x * frame_w));
+        hyd_write_u32(bw, &frame_size_u32, hyd_pack_signed(encoder->lf_group->y * frame_h));
+        hyd_write_u32(bw, &frame_size_u32, encoder->lf_group->width);
+        hyd_write_u32(bw, &frame_size_u32, encoder->lf_group->height);
     }
 
     /* blending_info.mode = kReplace */
@@ -335,8 +335,8 @@ HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group_p
     if (encoder->one_frame) {
         w = h = 2048;
     } else {
-        w = encoder->lf_group->tile_count_x << 8;
         h = encoder->lf_group->tile_count_y << 8;
+        w = encoder->lf_group->tile_count_x << 8;
     }
 
     if (tile_x >= (encoder->metadata.width + w - 1) / w || tile_y >= (encoder->metadata.height + h - 1) / h) {
@@ -345,21 +345,19 @@ HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group_p
     }
 
     HYDLFGroup *lf_group = &encoder->lf_group[encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0];
-    lf_group->lf_group_x = tile_x;
-    lf_group->lf_group_y = tile_y;
+    lf_group->y = tile_y;
+    lf_group->x = tile_x;
 
     if (encoder->one_frame) {
-        lf_group->tile_count_x = 8;
         lf_group->tile_count_y = 8;
+        lf_group->tile_count_x = 8;
     }
 
-    lf_group->lf_group_width = (tile_x + 1) * w > encoder->metadata.width ?
-                        encoder->metadata.width - tile_x * w : w;
-    lf_group->lf_group_height = (tile_y + 1) * h > encoder->metadata.height ?
-                            encoder->metadata.height - tile_y * h : h;
-    lf_group->lf_varblock_width = (lf_group->lf_group_width + 7) >> 3;
-    lf_group->lf_varblock_height = (lf_group->lf_group_height + 7) >> 3;
-    lf_group->stride = lf_group->lf_varblock_width << 3;
+    lf_group->height = (tile_y + 1) * h > encoder->metadata.height ? encoder->metadata.height - tile_y * h : h;
+    lf_group->width = (tile_x + 1) * w > encoder->metadata.width ? encoder->metadata.width - tile_x * w : w;
+    lf_group->varblock_height = (lf_group->height + 7) >> 3;
+    lf_group->varblock_width = (lf_group->width + 7) >> 3;
+    lf_group->stride = lf_group->varblock_width << 3;
 
     if (lf_group_ptr)
         *lf_group_ptr = lf_group;
@@ -395,7 +393,7 @@ HYDStatusCode hyd_send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t t
             return ret;
     }
 
-    size_t xyb_pixels = lf_group->lf_varblock_height * lf_group->lf_varblock_width * 64;
+    size_t xyb_pixels = lf_group->varblock_height * lf_group->varblock_width * 64;
     XYBEntry *temp_xyb = hyd_realloc_array(encoder->xyb, xyb_pixels, sizeof(XYBEntry));
     if (!temp_xyb)
         return HYD_NOMEM;
@@ -450,7 +448,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     if (ret < HYD_ERROR_START)
         return ret;
 
-    size_t nb_blocks = lf_group->lf_varblock_width * lf_group->lf_varblock_height;
+    size_t nb_blocks = lf_group->varblock_height * lf_group->varblock_width;
     ret = hyd_entropy_init_stream(&stream, bw, 3 * nb_blocks, zerobuf,
                                   1, 1, 1 << 14, 1, &encoder->error);
     if (ret < HYD_ERROR_START)
@@ -461,10 +459,10 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     const float shift[3] = {8192.f, 1024.f, 512.f};
     for (int i = 0; i < 3; i++) {
         const int c = i < 2 ? 1 - i : i;
-        for (size_t vy = 0; vy < lf_group->lf_varblock_height; vy++) {
+        for (size_t vy = 0; vy < lf_group->varblock_height; vy++) {
             const size_t y = vy << 3;
             const size_t row = lf_group->stride * y;
-            for (size_t vx = 0; vx < lf_group->lf_varblock_width; vx++) {
+            for (size_t vx = 0; vx < lf_group->varblock_width; vx++) {
                 const size_t x = vx << 3;
                 XYBEntry *xyb = &encoder->xyb[row + x];
                 xyb->xyb[c].i = xyb->xyb[c].f * shift[c];
@@ -495,8 +493,8 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     hyd_entropy_send_symbol(&stream, 5, 0);
     if ((ret = hyd_prefix_finalize_stream(&stream)) < HYD_ERROR_START)
         return ret;
-    size_t cfl_width = (lf_group->lf_varblock_width + 7) >> 3;
-    size_t cfl_height = (lf_group->lf_varblock_height + 7) >> 3;
+    size_t cfl_height = (lf_group->varblock_height + 7) >> 3;
+    size_t cfl_width = (lf_group->varblock_width + 7) >> 3;
     size_t num_z_pre = 2 * cfl_width * cfl_height + nb_blocks;
     size_t num_sym = num_z_pre + 2 * nb_blocks;
     ret = hyd_entropy_init_stream(&stream, bw, num_sym, zerobuf, 1, 0, 29, 1, &encoder->error);
@@ -517,9 +515,9 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
 static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     float scratchblock[2][8][8];
     for (size_t c = 0; c < 3; c++) {
-        for (size_t by = 0; by < lf_group->lf_varblock_height; by++) {
+        for (size_t by = 0; by < lf_group->varblock_height; by++) {
             size_t vy = by << 3;
-            for (size_t bx = 0; bx < lf_group->lf_varblock_width; bx++) {
+            for (size_t bx = 0; bx < lf_group->varblock_width; bx++) {
                 memset(scratchblock, 0, sizeof(scratchblock));
                 size_t vx = bx << 3;
                 for (size_t y = 0; y < 8; y++) {
@@ -577,16 +575,16 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                                           size_t gindex) {
     HYDStatusCode ret;
     for (size_t gy = 0; gy < lf_group->tile_count_y; gy++) {
-        if (gy << 8 >= lf_group->lf_group_height)
+        if (gy << 8 >= lf_group->height)
             break;
-        const size_t gh = (gy + 1) << 8 > lf_group->lf_group_height ?
-            lf_group->lf_group_height - (gy << 8) : 256;
+        const size_t gh = (gy + 1) << 8 > lf_group->height ?
+            lf_group->height - (gy << 8) : 256;
         const size_t gbh = (gh + 7) >> 3;
         for (size_t gx = 0; gx < lf_group->tile_count_x; gx++) {
-            if (gx << 8 >= lf_group->lf_group_width)
+            if (gx << 8 >= lf_group->width)
                 break;
-            const size_t gw = (gx + 1) << 8 > lf_group->lf_group_width ?
-                lf_group->lf_group_width - (gx << 8) : 256;
+            const size_t gw = (gx + 1) << 8 > lf_group->width ?
+                lf_group->width - (gx << 8) : 256;
             const size_t gbw = (gw + 7) >> 3;
             for (size_t by = 0; by < gbh; by++) {
                 const size_t vy = (by << 3) + (gy << 8);
@@ -668,12 +666,12 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
     const size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
     HYDLFGroup *lf_group = &encoder->lf_group[lfid];
     forward_dct(encoder, lf_group);
-    size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->lf_group_width;
-    size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->lf_group_height;
-    size_t frame_groups_y = ((frame_h + 255) >> 8);
-    size_t frame_groups_x = ((frame_w + 255) >> 8);
+    size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lf_group->height;
+    size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lf_group->width;
+    size_t frame_groups_y = (frame_h + 255) >> 8;
+    size_t frame_groups_x = (frame_w + 255) >> 8;
     size_t num_frame_groups = frame_groups_x * frame_groups_y;
-    const size_t num_groups = ((lf_group->lf_group_width + 255) >> 8) * ((lf_group->lf_group_height + 255) >> 8);
+    const size_t num_groups = ((lf_group->width + 255) >> 8) * ((lf_group->height + 255) >> 8);
     non_zeroes = calloc(3072, num_groups);
     if (!non_zeroes) {
         ret = HYD_NOMEM;
@@ -682,18 +680,18 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
 
     size_t non_zero_count = 0;
     size_t gindex = 0;
-    const size_t lf_pad_w = lf_group->lf_varblock_width << 3;
+    const size_t lf_pad_w = lf_group->varblock_width << 3;
     for (size_t gy = 0; gy < lf_group->tile_count_y; gy++) {
-        if (gy << 5 >= lf_group->lf_varblock_height)
+        if (gy << 5 >= lf_group->varblock_height)
             break;
-        const size_t gh = ((gy + 1) << 8) > lf_group->lf_group_height ?
-            lf_group->lf_group_height - (gy << 8) : 256;
+        const size_t gh = ((gy + 1) << 8) > lf_group->height ?
+            lf_group->height - (gy << 8) : 256;
         const size_t gbh = (gh + 7) >> 3;
         for (size_t gx = 0; gx < lf_group->tile_count_x; gx++) {
-            if (gx << 5 >= lf_group->lf_varblock_width)
+            if (gx << 5 >= lf_group->varblock_width)
                 break;
-            const size_t gw = (gx + 1) << 8 > lf_group->lf_group_width ?
-                lf_group->lf_group_width - (gx << 8) : 256;
+            const size_t gw = (gx + 1) << 8 > lf_group->width ?
+                lf_group->width - (gx << 8) : 256;
             const size_t gbw = (gw + 7) >> 3;
             for (size_t by = 0; by < gbh; by++) {
                 const size_t vy = (by << 3) + (gy << 8);

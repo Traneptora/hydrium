@@ -101,10 +101,10 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buf
         bias_lut = encoder->bias_cbrtf_lut;
     }
     const HYDLFGroup *lfg = &encoder->lf_group[lf_group_id];
-    for (size_t y = 0; y < lfg->lf_group_height; y++) {
+    for (size_t y = 0; y < lfg->height; y++) {
         const ptrdiff_t y_off = y * row_stride;
         const size_t row = y * lfg->stride;
-        for (size_t x = 0; x < lfg->lf_group_width; x++) {
+        for (size_t x = 0; x < lfg->width; x++) {
             const ptrdiff_t offset = y_off + x * pixel_stride;
             HYD_vec3_f32 rgbf32;
             HYD_vec3_u16 rgbu16;
@@ -150,13 +150,13 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buf
             entry->xyb[1].f = xyb.v1;
             entry->xyb[2].f = xyb.v2;
         }
-        const size_t residue_x = 8 - (lfg->lf_group_width & 0x7u);
+        const size_t residue_x = 8 - (lfg->width & 0x7u);
         if (residue_x != 8)
-            memset(encoder->xyb + row + lfg->lf_group_width, 0, residue_x * sizeof(XYBEntry));
+            memset(encoder->xyb + row + lfg->width, 0, residue_x * sizeof(XYBEntry));
     }
-    const size_t residue_y = 8 - (lfg->lf_group_height & 0x7u);
+    const size_t residue_y = 8 - (lfg->height & 0x7u);
     if (residue_y != 8)
-        memset(encoder->xyb + lfg->lf_group_height * lfg->stride, 0, residue_y * lfg->stride * sizeof(XYBEntry));
+        memset(encoder->xyb + lfg->height * lfg->stride, 0, residue_y * lfg->stride * sizeof(XYBEntry));
 
     return HYD_OK;
 }

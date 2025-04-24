@@ -11,14 +11,10 @@
 #include "format.h"
 
 typedef struct HYDLFGroup {
-    size_t tile_count_x;
-    size_t tile_count_y;
-    size_t lf_group_x;
-    size_t lf_group_y;
-    size_t lf_group_width;
-    size_t lf_group_height;
-    size_t lf_varblock_width;
-    size_t lf_varblock_height;
+    size_t tile_count_x, tile_count_y;
+    size_t x, y;
+    size_t width, height;
+    size_t varblock_width, varblock_height;
     size_t stride;
 } HYDLFGroup;
 
