@@ -81,6 +81,63 @@ static HYDStatusCode populate_output_lut(float **lut, const size_t size) {
     return HYD_OK;
 }
 
+#define process_lut(type_) \
+static inline HYDStatusCode process_lut_ ## type_ (HYDEncoder *encoder, const type_ *const buffer[3], \
+        ptrdiff_t row_stride, ptrdiff_t pixel_stride, const HYDLFGroup *lfg, \
+        const uint16_t *input_lut, const float *bias_lut) { \
+    for (size_t y = 0; y < lfg->height; y++) { \
+        const ptrdiff_t y_off = y * row_stride; \
+        const size_t row = y * lfg->stride; \
+        for (size_t x = 0; x < lfg->width; x++) { \
+            const ptrdiff_t offset = y_off + x * pixel_stride; \
+            HYD_vec3_u16 rgbu16; \
+            rgbu16.v0 = input_lut[buffer[0][offset]]; \
+            rgbu16.v1 = input_lut[buffer[1][offset]]; \
+            rgbu16.v2 = input_lut[buffer[2][offset]]; \
+            HYD_vec3_f32 xyb = rgb_to_xyb_u16(bias_lut, rgbu16); \
+            XYBEntry *entry = &encoder->xyb[row + x]; \
+            entry->xyb[0].f = xyb.v0; \
+            entry->xyb[1].f = xyb.v1; \
+            entry->xyb[2].f = xyb.v2; \
+        } \
+    } \
+    return HYD_OK; \
+}
+
+process_lut(uint8_t)
+process_lut(uint16_t)
+
+static inline HYDStatusCode process_lut_float(HYDEncoder *encoder, const float *const buffer[3],
+        ptrdiff_t row_stride, ptrdiff_t pixel_stride, const HYDLFGroup *lfg,
+        const int need_linearize) {
+    for (size_t y = 0; y < lfg->height; y++) {
+        const ptrdiff_t y_off = y * row_stride;
+        const size_t row = y * lfg->stride;
+        for (size_t x = 0; x < lfg->width; x++) {
+            const ptrdiff_t offset = y_off + x * pixel_stride;
+            HYD_vec3_f32 rgbf32;
+            rgbf32.v0 = buffer[0][offset];
+            rgbf32.v1 = buffer[1][offset];
+            rgbf32.v2 = buffer[2][offset];
+            if (!hyd_isfinite(rgbf32.v0) || !hyd_isfinite(rgbf32.v1) || !hyd_isfinite(rgbf32.v2)) {
+                encoder->error = "Invalid NaN Float";
+                return HYD_API_ERROR;
+            }
+            if (need_linearize) {
+                rgbf32.v0 = linearize(rgbf32.v0);
+                rgbf32.v1 = linearize(rgbf32.v1);
+                rgbf32.v2 = linearize(rgbf32.v2);
+            }
+            HYD_vec3_f32 xyb = rgb_to_xyb_f32(rgbf32);
+            XYBEntry *entry = &encoder->xyb[row + x];
+            entry->xyb[0].f = xyb.v0;
+            entry->xyb[1].f = xyb.v1;
+            entry->xyb[2].f = xyb.v2;
+        }
+    }
+    return HYD_OK;
+}
+
 HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buffer[3],
         ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id,
         HYDSampleFormat sample_fmt) {
@@ -101,58 +158,32 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buf
         bias_lut = encoder->bias_cbrtf_lut;
     }
     const HYDLFGroup *lfg = &encoder->lf_group[lf_group_id];
-    for (size_t y = 0; y < lfg->height; y++) {
-        const ptrdiff_t y_off = y * row_stride;
-        const size_t row = y * lfg->stride;
-        for (size_t x = 0; x < lfg->width; x++) {
-            const ptrdiff_t offset = y_off + x * pixel_stride;
-            HYD_vec3_f32 rgbf32;
-            HYD_vec3_u16 rgbu16;
-            /* populate rgb[3] */
-            switch (sample_fmt) {
-                case HYD_UINT8:
-                    rgbu16.v0 = input_lut[((const uint8_t *)buffer[0])[offset]];
-                    rgbu16.v1 = input_lut[((const uint8_t *)buffer[1])[offset]];
-                    rgbu16.v2 = input_lut[((const uint8_t *)buffer[2])[offset]];
-                    break;
-                case HYD_UINT16:
-                    rgbu16.v0 = input_lut[((const uint16_t *)buffer[0])[offset]];
-                    rgbu16.v1 = input_lut[((const uint16_t *)buffer[1])[offset]];
-                    rgbu16.v2 = input_lut[((const uint16_t *)buffer[2])[offset]];
-                    break;
-                case HYD_FLOAT32:
-                    rgbf32.v0 = ((const float *)buffer[0])[offset];
-                    rgbf32.v1 = ((const float *)buffer[1])[offset];
-                    rgbf32.v2 = ((const float *)buffer[2])[offset];
-                    if (!hyd_isfinite(rgbf32.v0) || !hyd_isfinite(rgbf32.v1) || !hyd_isfinite(rgbf32.v2)) {
-                        encoder->error = "Invalid NaN Float";
-                        return HYD_API_ERROR;
-                    }
-                    break;
-                default:
-                    encoder->error = "Invalid Sample Format";
-                    return HYD_API_ERROR;
-            }
-            HYD_vec3_f32 xyb;
-            /* process rgb[3] */
-            if (sample_fmt == HYD_FLOAT32) {
-                if (need_linearize) {
-                    rgbf32.v0 = linearize(rgbf32.v0);
-                    rgbf32.v1 = linearize(rgbf32.v1);
-                    rgbf32.v2 = linearize(rgbf32.v2);
-                }
-                xyb = rgb_to_xyb_f32(rgbf32);
-            } else {
-                xyb = rgb_to_xyb_u16(bias_lut, rgbu16);
-            }
-            XYBEntry *entry = &encoder->xyb[row + x];
-            entry->xyb[0].f = xyb.v0;
-            entry->xyb[1].f = xyb.v1;
-            entry->xyb[2].f = xyb.v2;
+    switch (sample_fmt) {
+        case HYD_UINT8: {
+            const uint8_t *const buf8[3] = { buffer[0], buffer[1], buffer[2] };
+            process_lut_uint8_t(encoder, buf8, row_stride, pixel_stride, lfg, input_lut, bias_lut);
+            break;
         }
-        const size_t residue_x = 8 - (lfg->width & 0x7u);
-        if (residue_x != 8)
+        case HYD_UINT16: {
+            const uint16_t *const buf16[3] = { buffer[0], buffer[1], buffer[2] };
+            process_lut_uint16_t(encoder, buf16, row_stride, pixel_stride, lfg, input_lut, bias_lut);
+            break;
+        }
+        case HYD_FLOAT32: {
+            const float *const buf32[3] = { buffer[0], buffer[1], buffer[2] };
+            process_lut_float(encoder, buf32, row_stride, pixel_stride, lfg, need_linearize);
+            break;
+        }
+        default:
+            encoder->error = "Invalid Sample Format";
+            return HYD_API_ERROR;
+    }
+    const size_t residue_x = 8 - (lfg->width & 0x7u);
+    if (residue_x != 8) {
+        for (size_t y = 0; y < lfg->height; y++) {
+            const size_t row = y * lfg->stride;
             memset(encoder->xyb + row + lfg->width, 0, residue_x * sizeof(XYBEntry));
+        }
     }
     const size_t residue_y = 8 - (lfg->height & 0x7u);
     if (residue_y != 8)
