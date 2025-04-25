@@ -10,6 +10,7 @@
 #include "encoder.h"
 #include "format.h"
 #include "internal.h"
+#include "math-functions.h"
 #include "memory.h"
 
 HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(void) {
@@ -21,12 +22,15 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     if (!encoder)
         return HYD_OK;
     hyd_entropy_stream_destroy(&encoder->hf_stream);
-    hyd_freep(&encoder->section_endpos);
+    if (encoder->section_endpos != encoder->section_endpos_array)
+        hyd_freep(&encoder->section_endpos);
     hyd_freep(&encoder->hf_stream_barrier);
     hyd_freep(&encoder->working_writer.buffer);
     hyd_freep(&encoder->xyb);
-    hyd_freep(&encoder->lf_group);
-    hyd_freep(&encoder->lf_group_perm);
+    if (encoder->lfg != encoder->lfg_array)
+        hyd_freep(&encoder->lfg);
+    if (encoder->lfg_perm != encoder->lfg_perm_array)
+        hyd_freep(&encoder->lfg_perm);
     hyd_freep(&encoder->input_lut8);
     hyd_freep(&encoder->input_lut16);
     hyd_freep(&encoder->bias_cbrtf_lut);
@@ -68,28 +72,39 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     }
 
     encoder->one_frame = metadata->tile_size_shift_x < 0 || metadata->tile_size_shift_y < 0;
-    encoder->lf_group_count_x = (metadata->width + 2047) >> 11;
-    encoder->lf_group_count_y = (metadata->height + 2047) >> 11;
-    encoder->lf_groups_per_frame = encoder->one_frame ? encoder->lf_group_count_x * encoder->lf_group_count_y : 1;
-    ret = hyd_realloc_array_p(&encoder->lf_group, encoder->lf_groups_per_frame, sizeof(*encoder->lf_group));
-    if (ret < HYD_ERROR_START)
-        return ret;
+    encoder->lfg_count_y = (metadata->height + 2047) >> 11;
+    encoder->lfg_count_x = (metadata->width + 2047) >> 11;
+    encoder->lfg_per_frame = encoder->one_frame ? encoder->lfg_count_y * encoder->lfg_count_x : 1;
+    if (encoder->lfg != encoder->lfg_array)
+        hyd_freep(&encoder->lfg);
+    if (encoder->lfg_per_frame > hyd_array_size(encoder->lfg_array)) {
+        encoder->lfg = hyd_malloc_array(encoder->lfg_per_frame, sizeof(*encoder->lfg));
+        if (!encoder->lfg)
+            return HYD_NOMEM;
+    } else {
+        encoder->lfg = encoder->lfg_array;
+    }
 
     if (encoder->one_frame) {
-        ret = hyd_realloc_array_p(&encoder->lf_group_perm,
-                encoder->lf_groups_per_frame, sizeof(*encoder->lf_group_perm));
-        if (ret < HYD_ERROR_START)
-            return ret;
-        for (size_t y = 0; y < encoder->lf_group_count_y; y++) {
-            for (size_t x = 0; x < encoder->lf_group_count_x; x++) {
+        if (encoder->lfg_perm != encoder->lfg_perm_array)
+            hyd_freep(&encoder->lfg_perm);
+        if (encoder->lfg_per_frame > hyd_array_size(encoder->lfg_perm_array)) {
+            encoder->lfg_perm = hyd_malloc_array(encoder->lfg_per_frame, sizeof(*encoder->lfg_perm));
+            if (!encoder->lfg_perm)
+                return HYD_NOMEM;
+        } else {
+            encoder->lfg_perm = encoder->lfg_perm_array;
+        }
+        for (size_t y = 0; y < encoder->lfg_count_y; y++) {
+            for (size_t x = 0; x < encoder->lfg_count_x; x++) {
                 ret = hyd_populate_lf_group(encoder, NULL, x, y);
                 if (ret < HYD_ERROR_START)
                     return ret;
             }
         }
     } else {
-        encoder->lf_group->tile_count_x = 1 << metadata->tile_size_shift_x;
-        encoder->lf_group->tile_count_y = 1 << metadata->tile_size_shift_y;
+        encoder->lfg->tile_count_y = 1 << metadata->tile_size_shift_y;
+        encoder->lfg->tile_count_x = 1 << metadata->tile_size_shift_x;
     }
 
     return HYD_OK;
@@ -167,14 +182,14 @@ HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const void *cons
     if (ret < HYD_ERROR_START)
         return ret;
 
-    size_t lfid = encoder->one_frame ? tile_y * encoder->lf_group_count_x + tile_x : 0;
+    size_t lfid = encoder->one_frame ? tile_y * encoder->lfg_count_x + tile_x : 0;
 
     ret = hyd_populate_xyb_buffer(encoder, buffer, row_stride, pixel_stride, lfid, sample_fmt);
     if (ret < HYD_ERROR_START)
         return ret;
 
     if (encoder->one_frame)
-        encoder->lf_group_perm[encoder->tiles_sent] = lfid;
+        encoder->lfg_perm[encoder->tiles_sent] = lfid;
 
     ret = hyd_encode_xyb_buffer(encoder, tile_x, tile_y);
     if (ret < HYD_ERROR_START)

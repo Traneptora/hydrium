@@ -157,7 +157,7 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buf
             return ret;
         bias_lut = encoder->bias_cbrtf_lut;
     }
-    const HYDLFGroup *lfg = &encoder->lf_group[lf_group_id];
+    const HYDLFGroup *lfg = &encoder->lfg[lf_group_id];
     switch (sample_fmt) {
         case HYD_UINT8: {
             const uint8_t *const buf8[3] = { buffer[0], buffer[1], buffer[2] };
