@@ -53,6 +53,9 @@ static const U32Table min_length_table = {
     .upos = {0, 0, 2, 8},
 };
 
+static const uint64_t zero64 = 0;
+static const void *const zerobuf = &zero64;
+
 static const uint32_t br_lut[16] = {
     0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
     0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF,
@@ -140,11 +143,12 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
     hyd_write_bool(bw, 0);
     // use mtf = true
     hyd_write_bool(bw, 1);
-    ret = hyd_entropy_init_stream(&nested, bw, stream->num_dists, (const uint8_t[]){0},
+    ret = hyd_entropy_init_stream(&nested, bw, stream->num_dists, zerobuf,
         1, 1, 64, 0, stream->error);
     if (ret < HYD_ERROR_START)
         goto fail;
-    if ((ret = hyd_entropy_set_hybrid_config(&nested, 0, 0, 4, 1, 0)) < HYD_ERROR_START)
+    ret = hyd_entropy_set_hybrid_config(&nested, 0, 0, 4, 1, 0);
+    if (ret < HYD_ERROR_START)
         goto fail;
     uint8_t mtf[256];
     for (int i = 0; i < 256; i++)
@@ -157,7 +161,8 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
                 break;
             }
         }
-        if ((ret = hyd_entropy_send_symbol(&nested, 0, index)) < HYD_ERROR_START)
+        ret = hyd_entropy_send_symbol(&nested, 0, index);
+        if (ret < HYD_ERROR_START)
             goto fail;
         if (index) {
             uint8_t value = mtf[index];
@@ -166,7 +171,8 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
         }
     }
 
-    if ((ret = hyd_prefix_finalize_stream(&nested)) < HYD_ERROR_START)
+    ret = hyd_prefix_finalize_stream(&nested);
+    if (ret < HYD_ERROR_START)
         goto fail;
 
     return bw->overflow_state;
@@ -492,13 +498,16 @@ static HYDStatusCode flush_lz77(HYDEntropyStream *stream) {
         hybridize(repeat_count, &hybrid_symbol, &lz77_len_conf);
         hybrid_symbol.cluster = stream->cluster_map[stream->last_dist];
         hybrid_symbol.token += stream->lz77_min_symbol;
-        if ((ret = send_hybridized_symbol(stream, &hybrid_symbol)) < HYD_ERROR_START)
+        ret = send_hybridized_symbol(stream, &hybrid_symbol);
+        if (ret < HYD_ERROR_START)
             return ret;
-        if ((ret = send_entropy_symbol0(stream, stream->num_dists - 1, !!stream->modular)) < HYD_ERROR_START)
+        ret = send_entropy_symbol0(stream, stream->num_dists - 1, !!stream->modular);
+        if (ret < HYD_ERROR_START)
             return ret;
     } else if (stream->last_symbol && stream->lz77_rle_count) {
         for (uint32_t k = 0; k < stream->lz77_rle_count; k++) {
-            if ((ret = send_entropy_symbol0(stream, stream->last_dist, last_symbol)) < HYD_ERROR_START)
+            ret = send_entropy_symbol0(stream, stream->last_dist, last_symbol);
+            if (ret < HYD_ERROR_START)
                 return ret;
         }
     }
@@ -516,12 +525,14 @@ HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uin
 
     if (stream->last_symbol == symbol + 1 &&
             stream->cluster_map[stream->last_dist] == stream->cluster_map[dist]) {
-        if (++stream->lz77_rle_count < 128)
+        if (stream->lz77_rle_count < 127) {
+            stream->lz77_rle_count++;
             return HYD_OK;
-        stream->lz77_rle_count--;
+        }
     }
 
-    if ((ret = flush_lz77(stream)) < HYD_ERROR_START)
+    ret = flush_lz77(stream);
+    if (ret < HYD_ERROR_START)
         return ret;
 
     stream->last_symbol = symbol + 1;
@@ -541,10 +552,11 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
         hyd_write_u32(bw, &min_symbol_table, stream->lz77_min_symbol);
         hyd_write_u32(bw, &min_length_table, stream->lz77_min_length);
         ret = write_hybrid_uint_config(stream, &lz77_len_conf, 8);
+        if (ret < HYD_ERROR_START)
+            return ret;
     }
+    ret = write_cluster_map(stream);
     if (ret < HYD_ERROR_START)
-        return ret;
-    if ((ret = write_cluster_map(stream)) < HYD_ERROR_START)
         return ret;
 
     int log_alphabet_size = hyd_cllog2(stream->max_alphabet_size);
