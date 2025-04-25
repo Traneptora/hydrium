@@ -16,5 +16,7 @@ static inline void hyd_freep(void *ptr) {
 
 void *hyd_malloc_array(size_t nmemb, size_t size);
 void *hyd_realloc_array(void *ptr, size_t nmemb, size_t size);
+HYDStatusCode hyd_realloc_p(void *buffer, size_t buffer_size);
+HYDStatusCode hyd_realloc_array_p(void *buffer, size_t nmemb, size_t size);
 
 #endif /* HYDRIUM_MEMORY_H_ */

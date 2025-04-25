@@ -466,11 +466,9 @@ static HYDStatusCode send_hybridized_symbol(HYDEntropyStream *stream, const HYDH
         return HYD_INTERNAL_ERROR;
     }
     if (stream->symbol_pos >= stream->symbol_count) {
-        HYDHybridSymbol *symbols = hyd_realloc_array(stream->symbols, stream->symbol_count << 1,
-            sizeof(HYDHybridSymbol));
-        if (!symbols)
-            return HYD_NOMEM;
-        stream->symbols = symbols;
+        HYDStatusCode ret = hyd_realloc_array_p(&stream->symbols, stream->symbol_count << 1, sizeof(HYDHybridSymbol));
+        if (ret < HYD_ERROR_START)
+            return ret;
         stream->symbol_count <<= 1;
     }
     stream->symbols[stream->symbol_pos++] = *symbol;

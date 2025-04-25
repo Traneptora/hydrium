@@ -394,10 +394,9 @@ HYDStatusCode hyd_send_tile_pre(HYDEncoder *encoder, uint32_t tile_x, uint32_t t
     }
 
     size_t xyb_pixels = lf_group->varblock_height * lf_group->varblock_width * 64;
-    XYBEntry *temp_xyb = hyd_realloc_array(encoder->xyb, xyb_pixels, sizeof(XYBEntry));
-    if (!temp_xyb)
-        return HYD_NOMEM;
-    encoder->xyb = temp_xyb;
+    ret = hyd_realloc_array_p(&encoder->xyb, xyb_pixels, sizeof(XYBEntry));
+    if (ret < HYD_ERROR_START)
+        return ret;
 
     return HYD_OK;
 }
@@ -635,10 +634,9 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
 
 static HYDStatusCode realloc_working_buffer(uint8_t **buffer, size_t *buffer_size) {
     size_t new_size = *buffer_size << 1;
-    uint8_t *new_buffer = realloc(*buffer, new_size);
-    if (!new_buffer)
-        return HYD_NOMEM;
-    *buffer = new_buffer;
+    HYDStatusCode ret = hyd_realloc_p(buffer, new_size);
+    if (ret < HYD_ERROR_START)
+        return ret;
     *buffer_size = new_size;
 
     return HYD_OK;

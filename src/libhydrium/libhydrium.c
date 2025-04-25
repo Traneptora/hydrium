@@ -71,16 +71,15 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     encoder->lf_group_count_x = (metadata->width + 2047) >> 11;
     encoder->lf_group_count_y = (metadata->height + 2047) >> 11;
     encoder->lf_groups_per_frame = encoder->one_frame ? encoder->lf_group_count_x * encoder->lf_group_count_y : 1;
-    void *temp = hyd_realloc_array(encoder->lf_group, encoder->lf_groups_per_frame, sizeof(HYDLFGroup));
-    if (!temp)
-        return HYD_NOMEM;
-    encoder->lf_group = temp;
+    ret = hyd_realloc_array_p(&encoder->lf_group, encoder->lf_groups_per_frame, sizeof(*encoder->lf_group));
+    if (ret < HYD_ERROR_START)
+        return ret;
 
     if (encoder->one_frame) {
-        temp = hyd_realloc_array(encoder->lf_group_perm, encoder->lf_groups_per_frame, sizeof(size_t));
-        if (!temp)
-            return HYD_NOMEM;
-        encoder->lf_group_perm = temp;
+        ret = hyd_realloc_array_p(&encoder->lf_group_perm,
+                encoder->lf_groups_per_frame, sizeof(*encoder->lf_group_perm));
+        if (ret < HYD_ERROR_START)
+            return ret;
         for (size_t y = 0; y < encoder->lf_group_count_y; y++) {
             for (size_t x = 0; x < encoder->lf_group_count_x; x++) {
                 ret = hyd_populate_lf_group(encoder, NULL, x, y);
