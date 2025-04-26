@@ -171,12 +171,12 @@ static void calculate_toc_perm(HYDEncoder *encoder, size_t toc_size, size_t *toc
         toc[toc_size + toc[j]] = j;
 }
 
-static size_t *get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size) {
+static HYDStatusCode get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size, size_t **lehmer_p, size_t lehmer_init) {
+    HYDStatusCode ret = HYD_OK;
     size_t toc_perm_array[64];
     size_t *toc_perm = toc_perm_array;
     int32_t temp_array[64];
     int32_t *temp = temp_array;
-    size_t *lehmer = NULL;
     const size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lfg->height;
     const size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lfg->width;
     const size_t frame_groups_y = (frame_h + 255) >> 8;
@@ -187,21 +187,32 @@ static size_t *get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size) {
         return HYD_OK;
     if ((*toc_size << 1) > hyd_array_size(toc_perm_array)) {
         toc_perm = hyd_malloc_array(*toc_size << 1, sizeof(*toc_perm));
-        if (!toc_perm)
+        if (!toc_perm) {
+            ret = HYD_NOMEM;
             goto end;
+        }
     }
     calculate_toc_perm(encoder, *toc_size, toc_perm, frame_groups_x);
     if (*toc_size > hyd_array_size(temp_array)) {
         temp = hyd_malloc_array(*toc_size, sizeof(int32_t));
-        if (!temp)
+        if (!temp) {
+            ret = HYD_NOMEM;
             goto end;
+        }
     }
     for (size_t i = 0; i < *toc_size; i++)
         temp[i] = i;
-    lehmer = calloc(*toc_size, sizeof(size_t));
-    if (!lehmer)
-        goto end;
-
+    size_t *lehmer;
+    if (lehmer_init < *toc_size) {
+        lehmer = calloc(*toc_size, sizeof(size_t));
+        if (!lehmer) {
+            ret = HYD_NOMEM;
+            goto end;
+        }
+        *lehmer_p = lehmer;
+    } else {
+        lehmer = *lehmer_p;
+    }
     for (size_t i = 0; i < *toc_size; i++) {
         size_t k = 0;
         for (size_t j = 0; j < *toc_size; j++) {
@@ -219,14 +230,15 @@ end:
         hyd_freep(&toc_perm);
     if (temp != temp_array)
         hyd_freep(&temp);
-    return lehmer;
+    return ret;
 }
 
 static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
     HYDBitWriter *bw = &encoder->writer;
     HYDStatusCode ret;
     HYDEntropyStream toc_stream = { 0 };
-    size_t *lehmer = NULL;
+    size_t lehmer_array[64];
+    size_t *lehmer = lehmer_array;
 
     if (bw->overflow_state)
         return bw->overflow_state;
@@ -297,9 +309,9 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
     hyd_write(bw, 0, 2);
 
     size_t toc_size = 2;
-    lehmer = get_lehmer_sequence(encoder, &toc_size);
-    if (!lehmer && toc_size > 1)
-        return HYD_NOMEM;
+    ret = get_lehmer_sequence(encoder, &toc_size, &lehmer, hyd_array_size(lehmer_array));
+    if (ret < HYD_ERROR_START)
+        goto end;
 
     /* permuted toc */
     if (toc_size > 1) {
@@ -327,7 +339,8 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
     encoder->wrote_frame_header = 1;
 
 end:
-    hyd_freep(&lehmer);
+    if (lehmer != lehmer_array)
+        hyd_freep(&lehmer);
     return ret;
 }
 
