@@ -9,16 +9,17 @@
 #include "math-functions.h"
 #include "memory.h"
 
+#define SF_CHAIN_CAPACITY (1 << 12)
+
 // State Flush. Monsieur Bond Wins.
 typedef struct StateFlush {
-    size_t token_index;
+    uint16_t diff;
     uint16_t value;
 } StateFlush;
 
 typedef struct StateFlushChain {
-    StateFlush *state_flushes;
+    StateFlush state_flushes[SF_CHAIN_CAPACITY];
     size_t pos;
-    size_t capacity;
     struct StateFlushChain *prev_chain;
 } StateFlushChain;
 
@@ -77,30 +78,19 @@ static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
 }
 
 void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
-    if (stream->frequencies) {
-        for (size_t i = 0; i < stream->num_clusters; i++)
-            free(stream->frequencies[i]);
-        free(stream->frequencies);
-    }
+    for (size_t i = 0; i < stream->num_clusters; i++)
+        free(stream->frequencies[i]);
     free(stream->cluster_map);
     free(stream->symbols);
-    free(stream->configs);
-    if (stream->alias_table) {
-        for (size_t i = 0; i < stream->num_clusters; i++) {
-            if (stream->alias_table[i]) {
-                for (size_t j = 0; j < stream->alphabet_sizes[i]; j++)
-                    free(stream->alias_table[i][j].cutoffs);
-                free(stream->alias_table[i]);
-            }
+    for (size_t i = 0; i < stream->num_clusters; i++) {
+        if (stream->alias_table[i]) {
+            for (size_t j = 0; j < stream->alphabet_sizes[i]; j++)
+                free(stream->alias_table[i][j].cutoffs);
+            free(stream->alias_table[i]);
         }
-        free(stream->alias_table);
     }
-    if (stream->vlc_table) {
-        for (size_t i = 0; i < stream->num_clusters; i++)
-            free(stream->vlc_table[i]);
-        free(stream->vlc_table);
-    }
-    free(stream->alphabet_sizes);
+    for (size_t i = 0; i < stream->num_clusters; i++)
+        free(stream->vlc_table[i]);
     memset(stream, 0, sizeof(HYDEntropyStream));
 }
 
@@ -421,13 +411,6 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDBitWriter *bw
     if (lz77_min_symbol)
         stream->cluster_map[num_dists - 1] = stream->num_clusters++;
 
-    stream->configs = hyd_malloc_array(stream->num_clusters, sizeof(HYDHybridUintConfig));
-    stream->alphabet_sizes = calloc(stream->num_clusters, sizeof(uint32_t));
-    if (!stream->configs || !stream->alphabet_sizes) {
-        ret = HYD_NOMEM;
-        goto fail;
-    }
-
     if (!custom_configs) {
         hyd_entropy_set_hybrid_config(stream, 0, stream->num_clusters - !!stream->lz77_min_symbol, 4, 1, 1);
         if (stream->lz77_min_symbol)
@@ -572,10 +555,6 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
             return ret;
     }
 
-    /* populate frequencies */
-    stream->frequencies = calloc(stream->num_clusters, sizeof(uint32_t *));
-    if (!stream->frequencies)
-        return HYD_NOMEM;
     for (size_t c = 0; c < stream->num_clusters; c++) {
         if (!stream->alphabet_sizes[c])
             continue;
@@ -843,11 +822,6 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
     }
 
     lengths = hyd_malloc_array(stream->max_alphabet_size, sizeof(uint32_t));
-    stream->vlc_table = calloc(stream->num_clusters, sizeof(HYDVLCElement *));
-    if (!lengths || !stream->vlc_table) {
-        ret = HYD_NOMEM;
-        goto fail;
-    }
     for (size_t i = 0; i < stream->num_clusters; i++) {
         stream->vlc_table[i] = calloc(stream->alphabet_sizes[i], sizeof(HYDVLCElement));
         if (!stream->vlc_table[i]) {
@@ -959,11 +933,6 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
     if (ret < HYD_ERROR_START)
         goto fail;
 
-    stream->alias_table = calloc(stream->num_clusters, sizeof(HYDAliasEntry *));
-    if (!stream->alias_table) {
-        ret = HYD_NOMEM;
-        goto fail;
-    }
     for (size_t i = 0; i < stream->num_clusters; i++) {
         if (!stream->alphabet_sizes[i])
             continue;
@@ -1026,24 +995,18 @@ end:
     return ret;
 }
 
-static HYDStatusCode append_state_flush(StateFlushChain **flushes, size_t token_index, uint16_t value) {
-    if ((*flushes)->pos == (*flushes)->capacity) {
-        StateFlushChain *chain = malloc(sizeof(StateFlushChain));
+static HYDStatusCode append_state_flush(StateFlushChain **flushes, uint16_t diff, uint16_t value) {
+    if ((*flushes)->pos == SF_CHAIN_CAPACITY) {
+        StateFlushChain *chain = malloc(sizeof(*chain));
         if (!chain)
             return HYD_NOMEM;
-        chain->state_flushes = hyd_malloc_array(1 << 10, sizeof(StateFlush));
-        if (!chain->state_flushes) {
-            free(chain);
-            return HYD_NOMEM;
-        }
-        chain->capacity = 1 << 10;
         chain->pos = 0;
         chain->prev_chain = *flushes;
         *flushes = chain;
     }
     (*flushes)->state_flushes[(*flushes)->pos++] = (StateFlush){
-        .token_index = token_index,
-        .value = value
+        .diff = diff,
+        .value = value,
     };
 
     return HYD_OK;
@@ -1055,7 +1018,6 @@ static StateFlush *pop_state_flush(StateFlushChain **flushes) {
     StateFlushChain *prev_chain = (*flushes)->prev_chain;
     if (!prev_chain)
         return NULL;
-    free((*flushes)->state_flushes);
     free(*flushes);
     *flushes = prev_chain;
     return pop_state_flush(flushes);
@@ -1063,18 +1025,17 @@ static StateFlush *pop_state_flush(StateFlushChain **flushes) {
 
 HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count) {
     HYDStatusCode ret = HYD_OK;
-    StateFlushChain flushes_base = { 0 }, *flushes = &flushes_base;
+    StateFlushChain *flushes = calloc(1, sizeof(*flushes));
+    if (!flushes) {
+        ret = HYD_NOMEM;
+        goto end;
+    }
     HYDBitWriter *bw = stream->bw;
     int log_alphabet_size = hyd_cllog2(stream->max_alphabet_size);
     if (log_alphabet_size < 5)
         log_alphabet_size = 5;
     const uint32_t log_bucket_size = 12 - log_alphabet_size;
     const uint32_t pos_mask = ~(~UINT32_C(0) << log_bucket_size);
-    if (!stream->alias_table) {
-        *stream->error = "alias table never generated";
-        ret = HYD_INTERNAL_ERROR;
-        goto end;
-    }
 
     if (symbol_count + symbol_start > stream->symbol_pos) {
         *stream->error = "symbol out of bounds during ans flush";
@@ -1082,24 +1043,23 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         goto end;
     }
 
-    flushes->state_flushes = hyd_malloc_array(1 << 10, sizeof(StateFlush));
-    if (!flushes->state_flushes) {
-        ret = HYD_NOMEM;
-        goto end;
-    }
-    flushes->capacity = 1 << 10;
-
-    uint32_t state = 0x130000;
+    uint32_t state = 0x130000u;
     const HYDHybridSymbol *symbols = stream->symbols + symbol_start;
+    size_t last_push = 0;
+    uint16_t last_value = 0;
     for (size_t p2 = 0; p2 < symbol_count; p2++) {
         const size_t p = symbol_count - p2 - 1;
         const uint8_t symbol = symbols[p].token;
         const size_t cluster = symbols[p].cluster;
         const uint32_t freq = stream->frequencies[cluster][symbol];
         if ((state >> 20) >= freq) {
-            ret = append_state_flush(&flushes, p, state & 0xFFFF);
-            if (ret < HYD_ERROR_START)
-                goto end;
+            if (last_push) {
+                ret = append_state_flush(&flushes, last_push - p, last_value);
+                if (ret < HYD_ERROR_START)
+                    goto end;
+            }
+            last_push = p;
+            last_value = state & 0xFFFF;
             state >>= 16;
         }
         const uint32_t div = state / freq;
@@ -1121,17 +1081,22 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
         }
         state = (div << 12) | (i << log_bucket_size) | pos;
     }
+    ret = append_state_flush(&flushes, last_push, last_value);
+    if (ret < HYD_ERROR_START)
+        goto end;
     ret = append_state_flush(&flushes, 0, (state >> 16) & 0xFFFF);
     if (ret < HYD_ERROR_START)
         goto end;
     ret = append_state_flush(&flushes, 0, state & 0xFFFF);
     if (ret < HYD_ERROR_START)
         goto end;
+    size_t last_pop = 0;
     for (size_t p = 0; p < symbol_count; p++) {
-        StateFlush *flush;
+        const StateFlush *flush;
         while ((flush = pop_state_flush(&flushes))) {
-            if (p >= flush->token_index) {
+            if (p - last_pop >= flush->diff) {
                 hyd_write(bw, flush->value, 16);
+                last_pop = p;
             } else {
                 flushes->pos++;
                 break;
@@ -1143,13 +1108,12 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symb
     ret = bw->overflow_state;
 
 end:
-    while (flushes->prev_chain) {
+    while (flushes && flushes->prev_chain) {
         StateFlushChain *prev = flushes->prev_chain;
-        free(flushes->state_flushes);
         free(flushes);
         flushes = prev;
     }
-    free(flushes->state_flushes);
+    free(flushes);
     return ret;
 }
 
