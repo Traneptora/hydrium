@@ -25,6 +25,11 @@ typedef struct XYBEntry {
     } xyb[3];
 } XYBEntry;
 
+typedef struct HFBarrier {
+    size_t barrier_index;
+    uint8_t preset;
+} HFBarrier;
+
 /* opaque structure */
 struct HYDEncoder {
     HYDImageMetadata metadata;
@@ -61,7 +66,7 @@ struct HYDEncoder {
     size_t *section_endpos;
     size_t section_count;
 
-    size_t *hf_stream_barrier;
+    HFBarrier *hf_stream_barrier;
     size_t groups_encoded;
 
     const char *error;

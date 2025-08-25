@@ -16,6 +16,10 @@ typedef struct IntPos {
     uint8_t x, y;
 } IntPos;
 
+typedef struct uint8_vec3 {
+    uint8_t v[3];
+} uint8_vec3;
+
 static const uint8_t level10_header[49] = {
     0x00, 0x00, 0x00, 0x0c,  'J',  'X',  'L',  ' ',
     0x0d, 0x0a, 0x87, 0x0a, 0x00, 0x00, 0x00, 0x14,
@@ -61,11 +65,11 @@ static const size_t coeff_num_non_zero_context[64] = {
     206, 206, 206, 206, 206, 206, 206, 206,
 };
 
-static const size_t hf_block_cluster_map[39] = {
-    0, 1, 2, 2,  3,  3,  4,  5,  6,  6,  6,  6,  6,
-    7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,
-    7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,
-};
+// static const size_t hf_block_cluster_map[39] = {
+//     0, 1, 2, 2,  3,  3,  4,  5,  6,  6,  6,  6,  6,
+//     7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,
+//     7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,
+// };
 
 static const int32_t hf_quant_weights[3][64] = {
     {
@@ -114,8 +118,6 @@ static const U32Table toc_table = {
     .cpos = {0, 1024, 17408, 4211712},
     .upos = {10, 14, 22, 30},
 };
-
-extern const uint8_t hf_cluster_map[7425];
 
 static HYDStatusCode write_header(HYDEncoder *encoder) {
 
@@ -316,8 +318,7 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
     /* permuted toc */
     if (toc_size > 1) {
         hyd_write_bool(bw, 1);
-        ret = hyd_entropy_init_stream(&toc_stream, bw, 1 + toc_size, zerobuf,
-                                        8, 0, 0, 0, &encoder->error);
+        ret = hyd_entropy_init_stream(&toc_stream, 1 + toc_size, zerobuf, 8, 0, 0, 0, &encoder->error);
         if (ret < HYD_ERROR_START)
             goto end;
         ret = hyd_entropy_send_symbol(&toc_stream, 0, toc_size);
@@ -328,7 +329,7 @@ static HYDStatusCode write_frame_header(HYDEncoder *encoder) {
             if (ret < HYD_ERROR_START)
                 goto end;
         }
-        ret = hyd_prefix_finalize_stream(&toc_stream);
+        ret = hyd_prefix_finalize_stream(&toc_stream, bw);
         if (ret < HYD_ERROR_START)
             goto end;
     } else {
@@ -428,7 +429,18 @@ static HYDStatusCode write_lf_global(HYDEncoder *encoder) {
     // quantizer quantLF = 4
     hyd_write_u32(bw, &quant_lf_table, 4);
     // HF Block Context all_default
+    hyd_write_bool(bw, 0);
+    // lf and qf thresholds
+    hyd_write(bw, 0, 16);
+    // simple clustering
     hyd_write_bool(bw, 1);
+    // nbits = 2
+    hyd_write(bw, 2, 2);
+    // cluster map
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 13; j++)
+            hyd_write(bw, i, 2);
+    }
     // LF Channel Correlation
     hyd_write_bool(bw, 1);
     // GlobalModular have_global_tree
@@ -449,8 +461,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
 
     // write MA Tree
     HYDEntropyStream stream;
-    ret = hyd_entropy_init_stream(&stream, bw, hyd_array_size(lf_ma_tree),
-                                  zerobuf, 6, 0, 0, 0, &encoder->error);
+    ret = hyd_entropy_init_stream(&stream, hyd_array_size(lf_ma_tree), zerobuf, 6, 0, 0, 0, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
     for (size_t i = 0; i < hyd_array_size(lf_ma_tree); i++) {
@@ -459,13 +470,12 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
             return ret;
     }
 
-    ret = hyd_prefix_finalize_stream(&stream);
+    ret = hyd_prefix_finalize_stream(&stream, bw);
     if (ret < HYD_ERROR_START)
         return ret;
 
     size_t nb_blocks = lf_group->varblock_height * lf_group->varblock_width;
-    ret = hyd_entropy_init_stream(&stream, bw, 3 * nb_blocks, zerobuf,
-                                  1, 1, 1 << 14, 1, &encoder->error);
+    ret = hyd_entropy_init_stream(&stream, 3 * nb_blocks, zerobuf, 1, 1, 1 << 14, 1, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
     ret = hyd_entropy_set_hybrid_config(&stream, 0, 0, 7, 1, 1);
@@ -493,13 +503,12 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
             }
         }
     }
-    ret = hyd_prefix_finalize_stream(&stream);
+    ret = hyd_prefix_finalize_stream(&stream, bw);
     if (ret < HYD_ERROR_START)
         return ret;
     hyd_write(bw, nb_blocks - 1, hyd_cllog2(nb_blocks));
     hyd_write(bw, 0x2, 4);
-    ret = hyd_entropy_init_stream(&stream, bw, 5, zerobuf,
-                                  6, 0, 0, 0, &encoder->error);
+    ret = hyd_entropy_init_stream(&stream, 5, zerobuf, 6, 0, 0, 0, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
     hyd_entropy_send_symbol(&stream, 1, 0);
@@ -507,14 +516,14 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     hyd_entropy_send_symbol(&stream, 3, 0);
     hyd_entropy_send_symbol(&stream, 4, 0);
     hyd_entropy_send_symbol(&stream, 5, 0);
-    ret = hyd_prefix_finalize_stream(&stream);
+    ret = hyd_prefix_finalize_stream(&stream, bw);
     if (ret < HYD_ERROR_START)
         return ret;
     size_t cfl_height = (lf_group->varblock_height + 7) >> 3;
     size_t cfl_width = (lf_group->varblock_width + 7) >> 3;
     size_t num_z_pre = 2 * cfl_width * cfl_height + nb_blocks;
     size_t num_sym = num_z_pre + 2 * nb_blocks;
-    ret = hyd_entropy_init_stream(&stream, bw, num_sym, zerobuf, 1, 0, 29, 1, &encoder->error);
+    ret = hyd_entropy_init_stream(&stream, num_sym, zerobuf, 1, 0, 29, 1, &encoder->error);
     if (ret < HYD_ERROR_START)
         return ret;
     for (size_t i = 0; i < num_z_pre; i++)
@@ -523,7 +532,7 @@ static HYDStatusCode write_lf_group(HYDEncoder *encoder, HYDLFGroup *lf_group) {
         hyd_entropy_send_symbol(&stream, 0, (hf_mult - 1) * 2);
     for (size_t i = 0; i < nb_blocks; i++)
         hyd_entropy_send_symbol(&stream, 0, 0);
-    ret = hyd_prefix_finalize_stream(&stream);
+    ret = hyd_prefix_finalize_stream(&stream, bw);
     if (ret < HYD_ERROR_START)
         return ret;
 
@@ -569,29 +578,31 @@ static void forward_dct(HYDEncoder *encoder, HYDLFGroup *lf_group) {
     }
 }
 
-static uint8_t get_predicted_non_zeroes(uint8_t *nz, size_t y, size_t x, size_t w, int c) {
+static uint8_t get_predicted_non_zeroes(uint8_vec3 *nz, size_t y, size_t x, size_t w, int c) {
     if (!x && !y)
         return 32;
     if (!x)
-        return nz[((y - 1) * w) * 3 + c];
+        return nz[(y - 1) * w].v[c];
     if (!y)
-        return nz[(x - 1) * 3 + c];
-    return (nz[((y - 1) * w + x) * 3 + c] + (uint32_t)nz[((y * w) + (x - 1)) * 3 + c] + 1) >> 1;
+        return nz[x - 1].v[c];
+    return (nz[(y - 1) * w + x].v[c] + (uint32_t)nz[(y * w) + (x - 1)].v[c] + 1) >> 1;
 }
 
-static size_t get_non_zero_context(size_t predicted, size_t block_context) {
+static inline size_t get_non_zero_context(size_t predicted) {
     if (predicted < 8)
-        return block_context + 15 * predicted;
+        return predicted;
     if (predicted > 64)
         predicted = 64;
 
-    return block_context + 15 * (4 + (predicted >> 1));
+    return 4 + (predicted >> 1);
 }
 
 static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream *stream, HYDLFGroup *lf_group,
-                                          size_t num_non_zeroes, size_t *symbol_count, uint8_t *non_zeroes,
-                                          size_t gindex) {
+                                          size_t num_non_zeroes, uint8_vec3 *non_zeroes, size_t lfid) {
     HYDStatusCode ret;
+    size_t preset = lfid / hyd_ceil_div(encoder->lfg_per_frame, 256); // this is always < 256
+    HFBarrier *symbol_count = encoder->hf_stream_barrier;
+    size_t gindex = encoder->groups_encoded;
     for (size_t gy = 0; gy < lf_group->tile_count_y; gy++) {
         if (gy << 8 >= lf_group->height)
             break;
@@ -608,30 +619,33 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                 const size_t vy = (by << 3) + (gy << 8);
                 for (size_t bx = 0; bx < gbw; bx++) {
                     const size_t vx = (bx << 3) + (gx << 8);
-                    for (int i = 0; i < 3; i++) {
-                        int c = i < 2 ? 1 - i : i;
+                    for (unsigned int i = 0; i < 3; i++) {
+                        unsigned int c = i < 2 ? 1 - i : i;
                         uint8_t predicted = get_predicted_non_zeroes(non_zeroes, by, bx, gbw, c);
-                        size_t block_context = hf_block_cluster_map[13 * i];
-                        size_t non_zero_context = get_non_zero_context(predicted, block_context);
-                        uint32_t non_zero_count = non_zeroes[(by * gbw + bx) * 3 + c];
+                        //size_t block_context = hf_block_cluster_map[13 * i];
+                        //size_t block_context = 0;
+                        size_t block_context = i;
+                        size_t non_zero_context = 1485 * preset + 3 * get_non_zero_context(predicted) + block_context;
+                        uint32_t non_zero_count = non_zeroes[by * gbw + bx].v[c];
                         ret = hyd_entropy_send_symbol(stream, non_zero_context, non_zero_count);
-                        symbol_count[gindex]++;
+                        symbol_count[gindex].barrier_index++;
                         if (ret < HYD_ERROR_START)
                             return ret;
                         if (!non_zero_count)
                             continue;
-                        size_t hist_context = 458 * block_context + 555;
+                        //size_t hist_context = 458 * block_context + 555;
+                        size_t hist_context = 1485 * preset + 458 * block_context + 111;
                         for (int k = 0; k < 63; k++) {
-                            IntPos pos = natural_order[k + 1];
-                            IntPos prev_pos = natural_order[k];
-                            const size_t prev_pos_s = (vy + prev_pos.y) * lf_group->stride + (vx + prev_pos.x);
-                            const size_t pos_s = (vy + pos.y) * lf_group->stride + (vx + pos.x);
-                            int prev = k ? !!encoder->xyb[prev_pos_s].xyb[c].i : non_zero_count <= 4;
+                            const IntPos pos = natural_order[k + 1];
+                            const IntPos prev_pos = natural_order[k];
+                            size_t prev_pos_s = (vy + prev_pos.y) * lf_group->stride + (vx + prev_pos.x);
+                            size_t pos_s = (vy + pos.y) * lf_group->stride + (vx + pos.x);
+                            unsigned int prev = k ? !!encoder->xyb[prev_pos_s].xyb[c].i : non_zero_count <= 4;
                             size_t coeff_context = hist_context + prev +
                                 ((coeff_num_non_zero_context[non_zero_count] + coeff_freq_context[k + 1]) << 1);
                             uint32_t value = hyd_pack_signed(encoder->xyb[pos_s].xyb[c].i);
                             ret = hyd_entropy_send_symbol(stream, coeff_context, value);
-                            symbol_count[gindex]++;
+                            symbol_count[gindex].barrier_index++;
                             if (ret < HYD_ERROR_START)
                                 return ret;
                             if (value && !--non_zero_count)
@@ -640,8 +654,8 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
                     }
                 }
             }
-            non_zeroes += 3 << 10;
-            gindex++;
+            non_zeroes += 1 << 10;
+            symbol_count[gindex++].preset = preset;
         }
     }
 
@@ -659,7 +673,8 @@ static HYDStatusCode realloc_working_buffer(uint8_t **buffer, size_t *buffer_siz
 }
 
 HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t tile_y) {
-    uint8_t *non_zeroes = NULL;
+    uint8_vec3 *non_zeroes = NULL;
+    uint8_t *hf_cluster_map = NULL;
     HYDStatusCode ret = HYD_OK;
     int need_buffer_init = !encoder->working_writer.buffer || !encoder->one_frame;
     if (!encoder->working_writer.buffer) {
@@ -689,7 +704,7 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
     size_t frame_groups_x = (frame_w + 255) >> 8;
     size_t num_frame_groups = frame_groups_x * frame_groups_y;
     const size_t num_groups = ((lf_group->width + 255) >> 8) * ((lf_group->height + 255) >> 8);
-    non_zeroes = calloc(3072, num_groups);
+    non_zeroes = calloc(num_groups << 10, sizeof(*non_zeroes));
     if (!non_zeroes) {
         ret = HYD_NOMEM;
         goto end;
@@ -720,10 +735,12 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
                             const size_t py = vy + natural_order[j].y;
                             const size_t px = vx + natural_order[j].x;
                             XYBEntry *xyb = &encoder->xyb[py * lf_pad_w + px];
-                            const int32_t q = (int32_t)(xyb->xyb[i].f * (hf_quant_weights[i][j] * hf_mult));
-                            xyb->xyb[i].i = hyd_abs(q) < 2 ? 0 : q;
-                            if (xyb->xyb[i].i) {
-                                non_zeroes[((gindex << 10) + by * gbw + bx) * 3 + i]++;
+                            const int32_t q = (int32_t)(xyb->xyb[i].f * hf_quant_weights[i][j] * hf_mult);
+                            if (hyd_abs(q) < 2) {
+                                xyb->xyb[i].i = 0;
+                            } else {
+                                xyb->xyb[i].i = q;
+                                non_zeroes[(gindex << 10) + by * gbw + bx].v[i]++;
                                 nzc = j;
                             }
                         }
@@ -768,27 +785,75 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
         encoder->section_endpos[encoder->section_count++] = encoder->working_writer.buffer_pos;
     }
 
+    const unsigned int num_presets = hyd_min(encoder->lfg_per_frame, 256);
+    const size_t cluster_map_size = 1485ul * num_presets;
     if (!encoder->tiles_sent) {
         const size_t num_syms = 1 << 12;
-        memset(&encoder->hf_stream, 0, sizeof(HYDEntropyStream));
-        ret = hyd_entropy_init_stream(&encoder->hf_stream, &encoder->working_writer,
-                                num_syms, hf_cluster_map, 7425, 1, 0, 0, &encoder->error);
+        memset(&encoder->hf_stream, 0, sizeof(encoder->hf_stream));
+        hf_cluster_map = malloc(cluster_map_size);
+        if (!hf_cluster_map) {
+            ret = HYD_NOMEM;
+            goto end;
+        }
+        if (num_presets * 9 <= 256) {
+            for (unsigned int i = 0; i < num_presets; i++) {
+                uint8_t *preset_map = hf_cluster_map + 1485ul * i;
+                for (unsigned int j = 0; j < 111; j += 3) {
+                    preset_map[j] = 9 * i;
+                    preset_map[j + 1] = 9 * i + 1;
+                    preset_map[j + 2] = 9 * i + 2;
+                }
+                for (unsigned int j = 111; j < 1485; j += 6) {
+                    preset_map[j] = 9 * i + 3;
+                    preset_map[j + 1] = 9 * i + 4;
+                    preset_map[j + 2] = 9 * i + 5;
+                    preset_map[j + 3] = 9 * i + 6;
+                    preset_map[j + 4] = 9 * i + 7;
+                    preset_map[j + 5] = 9 * i + 8;
+                }
+            }
+        } else if (num_presets * 3 <= 256) {
+            for (unsigned int i = 0; i < num_presets; i++) {
+                uint8_t *preset_map = hf_cluster_map + 1485ul * i;
+                memset(preset_map, 3 * i, 111);
+                for (unsigned int j = 111; j < 1485; j += 6) {
+                    preset_map[j] = 3 * i + 1;
+                    preset_map[j + 2] = 3 * i + 1;
+                    preset_map[j + 4] = 3 * i + 1;
+                    preset_map[j + 1] = 3 * i + 2;
+                    preset_map[j + 3] = 3 * i + 2;
+                    preset_map[j + 5] = 3 * i + 2;
+                }
+            }
+        } else if (num_presets * 2 <= 256) {
+            for (unsigned int i = 0; i < num_presets; i++) {
+                uint8_t *preset_map = hf_cluster_map + 1485ul * i;
+                memset(preset_map, 2 * i, 111);
+                memset(preset_map + 111, 2 * i + 1, 1374);
+            }
+        } else {
+            for (unsigned int i = 0; i < num_presets; i++)
+                memset(hf_cluster_map + 1485ul * i, i, 1485);
+        }
+
+        ret = hyd_entropy_init_stream(&encoder->hf_stream, num_syms, hf_cluster_map, cluster_map_size,
+            1, 0, 0, &encoder->error);
         if (ret < HYD_ERROR_START)
             goto end;
+        hyd_freep(&hf_cluster_map);
         ret = hyd_entropy_set_hybrid_config(&encoder->hf_stream, 0, 0, 4, 1, 0);
         if (ret < HYD_ERROR_START)
             goto end;
     }
 
     if (!encoder->hf_stream_barrier)
-        encoder->hf_stream_barrier = calloc(num_frame_groups, sizeof(size_t));
+        encoder->hf_stream_barrier = calloc(num_frame_groups, sizeof(*encoder->hf_stream_barrier));
     if (!encoder->hf_stream_barrier) {
         ret = HYD_NOMEM;
         goto end;
     }
 
-    ret = initialize_hf_coeffs(encoder, &encoder->hf_stream, lf_group, non_zero_count,
-            encoder->hf_stream_barrier, non_zeroes, encoder->groups_encoded);
+    ret = initialize_hf_coeffs(encoder, &encoder->hf_stream, lf_group, non_zero_count, non_zeroes, lfid);
     if (ret < HYD_ERROR_START)
         goto end;
     if (encoder->one_frame)
@@ -800,10 +865,10 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
     // default params HFGlobal
     hyd_write_bool(&encoder->working_writer, 1);
     // num hf presets
-    hyd_write(&encoder->working_writer, 0, hyd_cllog2(num_frame_groups));
+    hyd_write(&encoder->working_writer, num_presets - 1, hyd_cllog2(num_frame_groups));
     // HF Pass order
     hyd_write(&encoder->working_writer, 2, 2);
-    ret = hyd_ans_write_stream_header(&encoder->hf_stream);
+    ret = hyd_ans_write_stream_header(&encoder->hf_stream, &encoder->working_writer);
     if (ret < HYD_ERROR_START)
         goto end;
     if (num_frame_groups > 1) {
@@ -813,16 +878,17 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
 
     size_t soff = 0;
     for (size_t g = 0; g < num_frame_groups; g++) {
-        ret = hyd_ans_write_stream_symbols(&encoder->hf_stream, soff, encoder->hf_stream_barrier[g]);
+        hyd_write(&encoder->working_writer, encoder->hf_stream_barrier[g].preset, hyd_cllog2(num_presets));
+        ret = hyd_ans_write_stream_symbols(&encoder->hf_stream, &encoder->working_writer, 0, soff,
+            encoder->hf_stream_barrier[g].barrier_index);
         if (ret < HYD_ERROR_START)
             goto end;
-        soff += encoder->hf_stream_barrier[g];
+        soff += encoder->hf_stream_barrier[g].barrier_index;
         if (num_frame_groups > 1) {
             hyd_bitwriter_flush(&encoder->working_writer);
             encoder->section_endpos[encoder->section_count++] = encoder->working_writer.buffer_pos;
         }
     }
-    encoder->hf_stream.symbol_pos = 0;
 
     // write TOC to main buffer
     hyd_bitwriter_flush(&encoder->working_writer);
@@ -856,6 +922,7 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
     hyd_freep(&encoder->hf_stream_barrier);
 
 end:
+    hyd_freep(&hf_cluster_map);
     hyd_freep(&non_zeroes);
     return ret;
 }

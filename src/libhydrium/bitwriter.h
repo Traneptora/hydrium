@@ -31,5 +31,6 @@ HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const U32Table *table, uint32_t va
 HYDStatusCode hyd_write_u64(HYDBitWriter *bw, uint64_t value);
 HYDStatusCode hyd_write_bool(HYDBitWriter *bw, int flag);
 HYDStatusCode hyd_bitwriter_flush(HYDBitWriter *bw);
+HYDStatusCode hyd_write_drain_to(HYDBitWriter *to, HYDBitWriter *from);
 
 #endif /* HYDRIUM_BITWRITER_H_ */

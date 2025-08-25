@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "bitwriter.h"
+#include "math-functions.h"
 #include "internal.h"
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len,
@@ -22,6 +23,23 @@ HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buff
     return HYD_OK;
 }
 
+static HYDStatusCode regrow_buffer(HYDBitWriter *bw) {
+    if (bw->overflow_pos > sizeof(bw->overflow))
+        return HYD_INTERNAL_ERROR;
+    if (bw->realloc_func) {
+        bw->overflow_state = bw->realloc_func(&bw->buffer, &bw->buffer_len);
+        if (bw->overflow_state < HYD_ERROR_START)
+            return bw->overflow_state;
+        memcpy(bw->buffer + bw->buffer_pos, bw->overflow, bw->overflow_pos);
+        bw->buffer_pos += bw->overflow_pos;
+        bw->overflow_pos = 0;
+    } else {
+        bw->overflow_state = HYD_NEED_MORE_OUTPUT;
+    }
+
+    return bw->overflow_state;
+}
+
 static HYDStatusCode drain_cache(HYDBitWriter *bw) {
     while (bw->cache_bits >= 8) {
         uint8_t *buf = bw->buffer_pos >= bw->buffer_len ?
@@ -32,22 +50,45 @@ static HYDStatusCode drain_cache(HYDBitWriter *bw) {
         bw->cache_bits -= 8;
     }
 
-    if (bw->overflow_pos) {
-        if (bw->overflow_pos > sizeof(bw->overflow))
-            return HYD_INTERNAL_ERROR;
-        if (bw->realloc_func) {
-            bw->overflow_state = bw->realloc_func(&bw->buffer, &bw->buffer_len);
-            if (bw->overflow_state < HYD_ERROR_START)
-                return bw->overflow_state;
-            memcpy(bw->buffer + bw->buffer_pos, bw->overflow, bw->overflow_pos);
-            bw->buffer_pos += bw->overflow_pos;
-            bw->overflow_pos = 0;
-        } else {
-            bw->overflow_state = HYD_NEED_MORE_OUTPUT;
-        }
-    }
+    if (bw->overflow_pos)
+        return regrow_buffer(bw);
 
     return bw->overflow_state;
+}
+
+static inline uint32_t rl32(const uint8_t *const b) {
+    /* most compilers will change this to an instruction on platforms where there is one */
+    return (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+}
+
+HYDStatusCode hyd_write_drain_to(HYDBitWriter *to, HYDBitWriter *from) {
+    drain_cache(to);
+    drain_cache(from);
+    if (!to->cache_bits) {
+        size_t len = from->buffer_pos;
+        size_t pos = 0;
+        while (len) {
+            size_t remaining = to->buffer_len - to->buffer_pos;
+            size_t to_copy = hyd_min(remaining, len);
+            memcpy(to->buffer + to->buffer_pos, from->buffer + pos, to_copy);
+            pos += to_copy;
+            len -= to_copy;
+            to->buffer_pos += to_copy;
+            if (len) {
+                HYDStatusCode ret = regrow_buffer(to);
+                if (ret != HYD_OK)
+                    break;
+            }
+        }
+    } else {
+        size_t p = 0;
+        for (; p + 4 < from->buffer_pos; p += 4)
+            hyd_write(to, rl32(from->buffer + p), 32);
+        for (; p < from->buffer_pos; p++)
+            hyd_write(to, from->buffer[p], 8);
+    }
+    hyd_write(to, from->cache, from->cache_bits);
+    return to->overflow_state;
 }
 
 HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits) {

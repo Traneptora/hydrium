@@ -81,7 +81,11 @@ void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
     for (size_t i = 0; i < stream->num_clusters; i++)
         free(stream->frequencies[i]);
     free(stream->cluster_map);
-    free(stream->symbols);
+    if (stream->symbols) {
+        for (size_t i = 0; i < stream->num_symbol_groups; i++)
+            free(stream->symbols[i].symbols);
+        free(stream->symbols);
+    }
     for (size_t i = 0; i < stream->num_clusters; i++) {
         if (stream->alias_table[i]) {
             for (size_t j = 0; j < stream->alphabet_sizes[i]; j++)
@@ -95,7 +99,8 @@ void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
 }
 
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
-                                            int split_exponent, int msb_in_token, int lsb_in_token) {
+        int split_exponent, int msb_in_token, int lsb_in_token)
+{
     if (to_cluster && min_cluster >= to_cluster) {
         *stream->error = "min_cluster >= to_cluster";
         return HYD_INTERNAL_ERROR;
@@ -110,20 +115,20 @@ HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t mi
     return HYD_OK;
 }
 
-static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
-    HYDBitWriter *bw = stream->bw;
-
-    if (stream->num_dists == 1)
+static HYDStatusCode write_cluster_map(uint8_t *cluster_map, size_t num_dists, size_t num_clusters,
+        HYDBitWriter *bw, const char **error)
+{
+    if (num_dists == 1)
         return HYD_OK;
 
-    int nbits = hyd_cllog2(stream->num_clusters);
+    int nbits = hyd_cllog2(num_clusters);
 
-    if (nbits <= 3 && stream->num_dists * nbits <= 32) {
+    if (nbits <= 3 && num_dists * nbits <= 32) {
         // simple clustering
         hyd_write_bool(bw, 1);
         hyd_write(bw, nbits, 2);
-        for (size_t i = 0; i < stream->num_dists; i++)
-            hyd_write(bw, stream->cluster_map[i], nbits);
+        for (size_t i = 0; i < num_dists; i++)
+            hyd_write(bw, cluster_map[i], nbits);
         return bw->overflow_state;
     }
 
@@ -133,8 +138,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
     hyd_write_bool(bw, 0);
     // use mtf = true
     hyd_write_bool(bw, 1);
-    ret = hyd_entropy_init_stream(&nested, bw, stream->num_dists, zerobuf,
-        1, 1, 64, 0, stream->error);
+    ret = hyd_entropy_init_stream(&nested, num_dists, zerobuf, 1, 1, 64, 0, error);
     if (ret < HYD_ERROR_START)
         goto fail;
     ret = hyd_entropy_set_hybrid_config(&nested, 0, 0, 4, 1, 0);
@@ -143,10 +147,10 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
     uint8_t mtf[256];
     for (int i = 0; i < 256; i++)
         mtf[i] = i;
-    for (uint32_t j = 0; j < stream->num_dists; j++) {
+    for (uint32_t j = 0; j < num_dists; j++) {
         uint8_t index = 0;
         for (int k = 0; k < 256; k++) {
-            if (mtf[k] == stream->cluster_map[j]) {
+            if (mtf[k] == cluster_map[j]) {
                 index = k;
                 break;
             }
@@ -161,7 +165,7 @@ static HYDStatusCode write_cluster_map(HYDEntropyStream *stream) {
         }
     }
 
-    ret = hyd_prefix_finalize_stream(&nested);
+    ret = hyd_prefix_finalize_stream(&nested, bw);
     if (ret < HYD_ERROR_START)
         goto fail;
 
@@ -172,10 +176,8 @@ fail:
     return ret;
 }
 
-static HYDStatusCode write_hybrid_uint_config(HYDEntropyStream *stream, const HYDHybridUintConfig *config,
-                                              int log_alphabet_size) {
-    HYDBitWriter *bw = stream->bw;
-
+static HYDStatusCode write_hybrid_uint_config(HYDBitWriter *bw, const HYDHybridUintConfig *config,
+        int log_alphabet_size) {
     // split_exponent
     hyd_write(bw, config->split_exponent, hyd_cllog2(1 + log_alphabet_size));
     if (config->split_exponent == log_alphabet_size)
@@ -190,7 +192,8 @@ static HYDStatusCode write_hybrid_uint_config(HYDEntropyStream *stream, const HY
 }
 
 static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t cluster,
-        int log_alphabet_size, int32_t uniq_pos) {
+        int log_alphabet_size, int32_t uniq_pos)
+{
     int log_bucket_size = 12 - log_alphabet_size;
     uint32_t bucket_size = 1 << log_bucket_size;
     uint32_t table_size = 1 << log_alphabet_size;
@@ -272,8 +275,9 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     return HYD_OK;
 }
 
-static int32_t write_ans_frequencies(HYDEntropyStream *stream, uint32_t *frequencies, uint32_t alphabet_size) {
-    HYDBitWriter *bw = stream->bw;
+static int32_t write_ans_frequencies(HYDEntropyStream *stream, HYDBitWriter *bw, uint32_t *frequencies,
+        uint32_t alphabet_size)
+{
     if (!alphabet_size) {
         // simple dist
         hyd_write(bw, 0x1, 2);
@@ -371,13 +375,13 @@ static int32_t write_ans_frequencies(HYDEntropyStream *stream, uint32_t *frequen
     return HYD_DEFAULT;
 }
 
-HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDBitWriter *bw,
-                                  size_t symbol_count, const uint8_t *cluster_map, size_t num_dists,
-                                  int custom_configs, uint32_t lz77_min_symbol, int modular, const char **error) {
+HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, size_t init_symbol_count, const uint8_t *cluster_map,
+                                      size_t num_dists, int custom_configs, uint32_t lz77_min_symbol, int modular,
+                                      const char **error) {
     HYDStatusCode ret;
     memset(stream, 0, sizeof(HYDEntropyStream));
     stream->error = error;
-    if (!num_dists || !symbol_count) {
+    if (!num_dists || !init_symbol_count) {
         *stream->error = "zero dist count or zero symbol count";
         ret = HYD_INTERNAL_ERROR;
         goto fail;
@@ -388,12 +392,21 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, HYDBitWriter *bw
         stream->lz77_min_symbol = lz77_min_symbol;
     }
     stream->num_dists = num_dists;
-    stream->bw = bw;
     stream->modular = modular;
-    stream->symbol_count = symbol_count;
+    stream->symbols = calloc(1, sizeof(*stream->symbols));
+    if (!stream->symbols) {
+        ret = HYD_NOMEM;
+        goto fail;
+    }
+    stream->num_symbol_groups = 1;
+    stream->symbols->symbols = hyd_malloc_array(init_symbol_count, sizeof(*stream->symbols->symbols));
+    if (!stream->symbols->symbols) {
+        ret = HYD_NOMEM;
+        goto fail;
+    }
+    stream->symbols->capacity = init_symbol_count;
     stream->cluster_map = malloc(num_dists);
-    stream->symbols = hyd_malloc_array(stream->symbol_count, sizeof(HYDHybridSymbol));
-    if (!stream->cluster_map || !stream->symbols) {
+    if (!stream->cluster_map) {
         ret = HYD_NOMEM;
         goto fail;
     }
@@ -448,13 +461,14 @@ static HYDStatusCode send_hybridized_symbol(HYDEntropyStream *stream, const HYDH
         *stream->error = "Illegal send after stream header";
         return HYD_INTERNAL_ERROR;
     }
-    if (stream->symbol_pos >= stream->symbol_count) {
-        HYDStatusCode ret = hyd_realloc_array_p(&stream->symbols, stream->symbol_count << 1, sizeof(HYDHybridSymbol));
+    HYDSymbolGroup *group = &stream->symbols[stream->symbol_group_pos];
+    if (group->count >= group->capacity) {
+        HYDStatusCode ret = hyd_realloc_array_p(&group->symbols, group->capacity << 1, sizeof(*group->symbols));
         if (ret < HYD_ERROR_START)
             return ret;
-        stream->symbol_count <<= 1;
+        group->capacity <<= 1;
     }
-    stream->symbols[stream->symbol_pos++] = *symbol;
+    group->symbols[group->count++] = *symbol;
     if (symbol->token >= stream->max_alphabet_size)
         stream->max_alphabet_size = 1 + symbol->token;
     if (symbol->token >= stream->alphabet_sizes[symbol->cluster])
@@ -522,9 +536,8 @@ HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uin
     return send_entropy_symbol0(stream, dist, symbol);
 }
 
-static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, int prefix_codes) {
+static HYDStatusCode stream_header_common(HYDEntropyStream *stream, HYDBitWriter *bw, int *las, int prefix_codes) {
     HYDStatusCode ret = HYD_OK;
-    HYDBitWriter *bw = stream->bw;
     hyd_write_bool(bw, stream->lz77_min_symbol);
     if (stream->lz77_min_symbol) {
         ret = flush_lz77(stream);
@@ -532,11 +545,11 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
             return ret;
         hyd_write_u32(bw, &min_symbol_table, stream->lz77_min_symbol);
         hyd_write_u32(bw, &min_length_table, stream->lz77_min_length);
-        ret = write_hybrid_uint_config(stream, &lz77_len_conf, 8);
+        ret = write_hybrid_uint_config(bw, &lz77_len_conf, 8);
         if (ret < HYD_ERROR_START)
             return ret;
     }
-    ret = write_cluster_map(stream);
+    ret = write_cluster_map(stream->cluster_map, stream->num_dists, stream->num_clusters, bw, stream->error);
     if (ret < HYD_ERROR_START)
         return ret;
 
@@ -550,7 +563,7 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
         hyd_write(bw, log_alphabet_size - 5, 2);
 
     for (size_t i = 0; i < stream->num_clusters; i++) {
-        ret = write_hybrid_uint_config(stream, &stream->configs[i], prefix_codes ? 15 : log_alphabet_size);
+        ret = write_hybrid_uint_config(bw, &stream->configs[i], prefix_codes ? 15 : log_alphabet_size);
         if (ret < HYD_ERROR_START)
             return ret;
     }
@@ -562,8 +575,9 @@ static HYDStatusCode stream_header_common(HYDEntropyStream *stream, int *las, in
         if (!stream->frequencies[c])
             return HYD_NOMEM;
     }
-    for (size_t pos = 0; pos < stream->symbol_pos; pos++) {
-        const HYDHybridSymbol *sym = &stream->symbols[pos];
+    HYDSymbolGroup *group = &stream->symbols[stream->symbol_group_pos];
+    for (size_t pos = 0; pos < group->count; pos++) {
+        const HYDHybridSymbol *sym = &group->symbols[pos];
         stream->frequencies[sym->cluster][sym->token]++;
     }
 
@@ -588,7 +602,7 @@ static int32_t collect(FrequencyEntry *entry) {
 static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t *frequencies,
                                         uint32_t *lengths, uint32_t alphabet_size, int32_t max_depth) {
     HYDStatusCode ret = HYD_OK;
-    FrequencyEntry *tree = calloc((2 * alphabet_size - 1), sizeof(FrequencyEntry));
+    FrequencyEntry *tree = calloc((2 * alphabet_size - 1), sizeof(*tree));
     if (!tree) {
         ret = HYD_NOMEM;
         goto end;
@@ -611,10 +625,10 @@ static HYDStatusCode build_huffman_tree(HYDEntropyStream *stream, const uint32_t
     if (max_depth < 0)
         max_depth = hyd_cllog2(alphabet_size + 1);
 
-    for (uint32_t k = 0; k < alphabet_size - 1; k++) {
+    for (uint32_t k = 0; k < alphabet_size - 1; k++, nz--) {
         int32_t smallest = -1;
         int32_t second = -1;
-        int32_t target = max_depth - hyd_cllog2(nz--) + 1;
+        int32_t target = max_depth - hyd_cllog2(nz) + 1;
         for (uint32_t j = 2 * k; j < alphabet_size + k; j++) {
             if (!tree[j].frequency)
                 continue;
@@ -723,9 +737,9 @@ static void flush_zeroes(HYDBitWriter *bw, const HYDVLCElement *level1_table, ui
     }
 }
 
-static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, uint32_t alphabet_size,
-                                                  const uint32_t *lengths) {
-    HYDBitWriter *bw = stream->bw;
+static HYDStatusCode write_complex_prefix_lengths(HYDEntropyStream *stream, HYDBitWriter *bw,
+        uint32_t alphabet_size, const uint32_t *lengths)
+{
     HYDStatusCode ret = HYD_OK;
 
     // hskip = 0
@@ -800,13 +814,12 @@ end:
     return ret;
 }
 
-HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
+HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream, HYDBitWriter *bw) {
     HYDStatusCode ret;
     int log_alphabet_size;
-    HYDBitWriter *bw = stream->bw;
     uint32_t *lengths = NULL;
 
-    ret = stream_header_common(stream, &log_alphabet_size, 1);
+    ret = stream_header_common(stream, bw, &log_alphabet_size, 1);
     if (ret < HYD_ERROR_START)
         goto fail;
 
@@ -854,7 +867,7 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream) {
         }
 
         if (nsym > 4) {
-            ret = write_complex_prefix_lengths(stream, alphabet_size, lengths);
+            ret = write_complex_prefix_lengths(stream, bw, alphabet_size, lengths);
             if (ret < HYD_ERROR_START)
                 goto fail;
             ret = build_prefix_table(stream, table, lengths, alphabet_size);
@@ -923,13 +936,12 @@ fail:
     return ret;
 }
 
-HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
+HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream, HYDBitWriter *bw) {
 
     HYDStatusCode ret;
     int log_alphabet_size;
-    HYDBitWriter *bw = stream->bw;
 
-    ret = stream_header_common(stream, &log_alphabet_size, 0);
+    ret = stream_header_common(stream, bw, &log_alphabet_size, 0);
     if (ret < HYD_ERROR_START)
         goto fail;
 
@@ -943,7 +955,7 @@ HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream) {
         }
     }
     for (size_t i = 0; i < stream->num_clusters; i++) {
-        int32_t uniq_pos = write_ans_frequencies(stream, stream->frequencies[i], stream->alphabet_sizes[i]);
+        int32_t uniq_pos = write_ans_frequencies(stream, bw, stream->frequencies[i], stream->alphabet_sizes[i]);
         if (uniq_pos < HYD_ERROR_START) {
             ret = uniq_pos;
             goto fail;
@@ -964,15 +976,16 @@ fail:
     return ret;
 }
 
-HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count) {
-    HYDBitWriter *bw = stream->bw;
-
-    if (symbol_count + symbol_start > stream->symbol_pos) {
+HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, HYDBitWriter *bw, size_t symbol_group,
+        size_t symbol_start, size_t symbol_count)
+{
+    HYDSymbolGroup *group = &stream->symbols[symbol_group];
+    if (symbol_count + symbol_start > group->count) {
         *stream->error = "symbol out of bounds";
         return HYD_INTERNAL_ERROR;
     }
 
-    const HYDHybridSymbol *symbols = stream->symbols + symbol_start;
+    const HYDHybridSymbol *symbols = group->symbols + symbol_start;
     for (size_t p = 0; p < symbol_count; p++) {
         size_t cluster = symbols[p].cluster;
         uint32_t token = symbols[p].token;
@@ -984,11 +997,15 @@ HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, size_t s
     return bw->overflow_state;
 }
 
-HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream) {
-    HYDStatusCode ret = hyd_prefix_write_stream_header(stream);
+HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream, HYDBitWriter *bw) {
+    HYDStatusCode ret = hyd_prefix_write_stream_header(stream, bw);
     if (ret < HYD_ERROR_START)
         goto end;
-    ret = hyd_prefix_write_stream_symbols(stream, 0, stream->symbol_pos);
+    for (size_t i = 0; i < stream->num_symbol_groups; i++) {
+        ret = hyd_prefix_write_stream_symbols(stream, bw, i, 0, stream->symbols[i].count);
+        if (ret < HYD_ERROR_START)
+            goto end;
+    }
 
 end:
     hyd_entropy_stream_destroy(stream);
@@ -1023,28 +1040,30 @@ static StateFlush *pop_state_flush(StateFlushChain **flushes) {
     return pop_state_flush(flushes);
 }
 
-HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, size_t symbol_start, size_t symbol_count) {
+HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, HYDBitWriter *bw, size_t symbol_group,
+        size_t symbol_start, size_t symbol_count)
+{
     HYDStatusCode ret = HYD_OK;
     StateFlushChain *flushes = calloc(1, sizeof(*flushes));
     if (!flushes) {
         ret = HYD_NOMEM;
         goto end;
     }
-    HYDBitWriter *bw = stream->bw;
     int log_alphabet_size = hyd_cllog2(stream->max_alphabet_size);
     if (log_alphabet_size < 5)
         log_alphabet_size = 5;
     const uint32_t log_bucket_size = 12 - log_alphabet_size;
     const uint32_t pos_mask = ~(~UINT32_C(0) << log_bucket_size);
 
-    if (symbol_count + symbol_start > stream->symbol_pos) {
+    HYDSymbolGroup *group = &stream->symbols[symbol_group];
+    if (symbol_count + symbol_start > group->count) {
         *stream->error = "symbol out of bounds during ans flush";
         ret = HYD_INTERNAL_ERROR;
         goto end;
     }
 
     uint32_t state = 0x130000u;
-    const HYDHybridSymbol *symbols = stream->symbols + symbol_start;
+    const HYDHybridSymbol *symbols = group->symbols + symbol_start;
     size_t last_push = 0;
     uint16_t last_value = 0;
     for (size_t p2 = 0; p2 < symbol_count; p2++) {
@@ -1117,11 +1136,15 @@ end:
     return ret;
 }
 
-HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream) {
-    HYDStatusCode ret = hyd_ans_write_stream_header(stream);
+HYDStatusCode hyd_ans_finalize_stream(HYDEntropyStream *stream, HYDBitWriter *bw) {
+    HYDStatusCode ret = hyd_ans_write_stream_header(stream, bw);
     if (ret < HYD_ERROR_START)
         goto end;
-    ret = hyd_ans_write_stream_symbols(stream, 0, stream->symbol_pos);
+    for (size_t i = 0; i < stream->num_symbol_groups; i++) {
+        ret = hyd_ans_write_stream_symbols(stream, bw, i, 0, stream->symbols[i].count);
+        if (ret < HYD_ERROR_START)
+            goto end;
+    }
 
 end:
     hyd_entropy_stream_destroy(stream);
