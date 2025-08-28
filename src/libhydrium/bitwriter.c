@@ -8,7 +8,13 @@
 
 #include "bitwriter.h"
 #include "math-functions.h"
+#include "memory.h"
 #include "internal.h"
+
+static const U32Table enum_table = {
+    .cpos = {0, 1, 2, 18},
+    .upos = {0, 0, 4, 6},
+};
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len,
                                   uint64_t cache, int cache_bits) {
@@ -153,4 +159,28 @@ HYDStatusCode hyd_write_u64(HYDBitWriter *bw, uint64_t value) {
             shift += 8;
         }
     }
+}
+
+HYDStatusCode hyd_write_icc_varint(HYDBitWriter *bw, uint64_t value) {
+    while (value > 0x7f) {
+        hyd_write(bw, (value & 0x7f) | 0x80, 8);
+        value >>= 7;
+    }
+    return hyd_write(bw, value & 0x7f, 8);
+}
+
+HYDStatusCode hyd_realloc_func_default(uint8_t **buffer, size_t *buffer_size) {
+    size_t new_size = *buffer_size << 1;
+    HYDStatusCode ret = hyd_realloc_p(buffer, new_size);
+    if (ret < HYD_ERROR_START)
+        return ret;
+    *buffer_size = new_size;
+
+    return HYD_OK;
+}
+
+HYDStatusCode hyd_write_enum(HYDBitWriter *bw, uint32_t value) {
+    if (value > 63)
+        return HYD_INTERNAL_ERROR;
+    return hyd_write_u32(bw, &enum_table, value);
 }

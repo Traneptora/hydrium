@@ -34,6 +34,7 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     hyd_freep(&encoder->input_lut8);
     hyd_freep(&encoder->input_lut16);
     hyd_freep(&encoder->bias_cbrtf_lut);
+    hyd_freep(&encoder->icc_data);
     hyd_freep(&encoder);
     return HYD_OK;
 }
@@ -198,5 +199,100 @@ HYDRIUM_EXPORT HYDStatusCode hyd_send_tile(HYDEncoder *encoder, const void *cons
     if (encoder->one_frame)
         encoder->tiles_sent++;
 
+    return HYD_OK;
+}
+
+static inline uint8_t header_predict(const uint8_t *header, uint32_t icc_size, unsigned int i)
+{
+    if (i < 4)
+        return (icc_size >> (8 * (3 - i))) & 0xff;
+    if (i == 8)
+        return 4;
+    if (i >= 12 && i < 24)
+        return "mntrRGB XYZ "[i - 12];
+    if (i >= 36 && i < 40)
+        return "acsp"[i - 36];
+    if (i >= 41 && i < 44) {
+        if (header[40] == 'A')
+            return "PPL"[i - 41];
+        if (header[40] == 'M')
+            return "SFT"[i - 41];
+        if (header[40] == 'S') {
+            if (header[41] == 'G')
+                return "I "[i - 42];
+            if (header[41] == 'U')
+                return "NW"[i - 42];
+        }
+    }
+    if (i == 70)
+        return 246;
+    if (i == 71)
+        return 214;
+    if (i == 73)
+        return 1;
+    if (i == 78)
+        return 211;
+    if (i == 79)
+        return 45;
+    if (i >= 80 && i < 84)
+        return header[i - 76];
+    return 0;
+}
+
+HYDRIUM_EXPORT HYDStatusCode hyd_set_suggested_icc_profile(HYDEncoder *encoder,
+    const uint8_t *icc_data, size_t icc_size)
+{
+    if (!icc_data && !icc_size) {
+        hyd_freep(&encoder->icc_data);
+        encoder->icc_size = 0;
+        return HYD_OK;
+    }
+
+    if (!icc_size || !icc_data || icc_size > UINT32_MAX)
+        return HYD_API_ERROR;
+
+    /* three varints and two bytes */
+    /* varint caps out at 10 bytes for ~0ul */
+    size_t mangled_buffer_size = icc_size + 10 + 10 + 2 + 10;
+    uint8_t *mangled_icc = malloc(mangled_buffer_size);
+    if (!mangled_icc)
+        return HYD_NOMEM;
+    HYDBitWriter bws, *bw = &bws;
+    hyd_init_bit_writer(bw, mangled_icc, mangled_buffer_size, 0, 0);
+
+    size_t header_size = hyd_min(icc_size, 128);
+
+    uint8_t header[128];
+    for (unsigned int i = 0; i < header_size; i++)
+        header[i] = (icc_data[i] - header_predict(icc_data, icc_size, i)) & 0xff;
+
+    size_t remaining_size = icc_size - header_size;
+    hyd_write_icc_varint(bw, icc_size);
+    hyd_write_icc_varint(bw, remaining_size ? 3 + hyd_fllog2(remaining_size) / 7 : 0);
+
+    /* nontrivial command stream */
+    if (remaining_size) {
+        /* taglist length */
+        /* this uses 1 byte */
+        hyd_write_icc_varint(bw, 0);
+        /* command == 1 */
+        hyd_write(bw, 1, 8);
+        hyd_write_icc_varint(bw, remaining_size);
+    }
+
+    hyd_bitwriter_flush(bw);
+    memcpy(bw->buffer + bw->buffer_pos, header, header_size);
+    bw->buffer_pos += header_size;
+
+    if (remaining_size) {
+        /* should have allocated enough extra space up top */
+        hyd_bitwriter_flush(bw);
+        memcpy(bw->buffer + bw->buffer_pos, icc_data + header_size, remaining_size);
+        bw->buffer_pos += remaining_size;
+    }
+
+    hyd_bitwriter_flush(bw);
+    encoder->icc_data = bw->buffer;
+    encoder->icc_size = bw->buffer_pos;
     return HYD_OK;
 }

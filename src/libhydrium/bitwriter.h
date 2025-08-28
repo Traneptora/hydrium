@@ -28,9 +28,12 @@ HYDStatusCode hyd_write(HYDBitWriter *bw, uint64_t value, int bits);
 
 HYDStatusCode hyd_write_zero_pad(HYDBitWriter *bw);
 HYDStatusCode hyd_write_u32(HYDBitWriter *bw, const U32Table *table, uint32_t value);
+HYDStatusCode hyd_write_enum(HYDBitWriter *bw, uint32_t value);
 HYDStatusCode hyd_write_u64(HYDBitWriter *bw, uint64_t value);
 HYDStatusCode hyd_write_bool(HYDBitWriter *bw, int flag);
 HYDStatusCode hyd_bitwriter_flush(HYDBitWriter *bw);
 HYDStatusCode hyd_write_drain_to(HYDBitWriter *to, HYDBitWriter *from);
+HYDStatusCode hyd_write_icc_varint(HYDBitWriter *bw, uint64_t value);
+HYDStatusCode hyd_realloc_func_default(uint8_t **buffer, size_t *buffer_size);
 
 #endif /* HYDRIUM_BITWRITER_H_ */

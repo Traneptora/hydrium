@@ -26,8 +26,7 @@ void *hyd_realloc_array(void *ptr, size_t nmemb, size_t size) {
 
 HYDStatusCode hyd_realloc_p(void *buffer, size_t buffer_size) {
     void **bufferp = buffer;
-    size_t new_size = buffer_size << 1;
-    void *new_buffer = realloc(*bufferp, new_size);
+    void *new_buffer = realloc(*bufferp, buffer_size);
     if (!new_buffer)
         return HYD_NOMEM;
     *bufferp = new_buffer;

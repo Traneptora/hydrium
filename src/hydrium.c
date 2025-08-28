@@ -91,6 +91,8 @@ int main(int argc, const char *argv[]) {
     const char *in_fname = NULL;
     const char *out_fname = NULL;
     int found_mm = 0;
+    const char *icc_from_fname = NULL;
+    FILE *icc_from = NULL;
 
     while (++argp < argc) {
         if (found_mm || strncmp(argv[argp], "--", 2)) {
@@ -129,6 +131,8 @@ int main(int argc, const char *argv[]) {
             pfm = 0;
         } else if (!strcmp(argv[argp], "--linear")) {
             linear = 1;
+        } else if (!strncmp(argv[argp], "--tag-icc-from=", 15)) {
+            icc_from_fname = argv[argp] + 15;
         }
     }
 
@@ -323,6 +327,57 @@ int main(int argc, const char *argv[]) {
     if (ret < HYD_ERROR_START)
         goto done;
 
+    uint8_t *icc_buffer = NULL;
+    size_t icc_len = 0;
+    if (icc_from_fname && *icc_from_fname) {
+        icc_from = fopen(icc_from_fname, "rb");
+        if (!icc_from) {
+            fprintf(stderr, "%s: error opening file: %s\n", argv[0], icc_from_fname);
+            goto done;
+        }
+        size_t icc_bufsize = 4096;
+        icc_buffer = malloc(icc_bufsize);
+        if (!icc_buffer) {
+            fprintf(stderr, "%s: error allocating icc buffer\n", argv[0]);
+            goto done;
+        }
+        while (1) {
+            if (icc_bufsize > INT32_MAX) {
+                /* oops, probably reading from infinite device file like /dev/zero */
+                free(icc_buffer);
+                icc_buffer = NULL;
+                fprintf(stderr, "%s: that is a very big icc profile: %s\n", argv[0], icc_from_fname);
+                break;
+            }
+            if (icc_bufsize - icc_len < 4096) {
+                void *p = realloc(icc_buffer, icc_bufsize << 1);
+                if (!p)
+                    goto done;
+                icc_buffer = p;
+                icc_bufsize <<= 1;
+            }
+            size_t read = fread(icc_buffer + icc_len, 1, 4096, icc_from);
+            icc_len += read;
+            if (read < 4096) {
+                if (ferror(icc_from)) {
+                    fprintf(stderr, "%s: error reading from icc file\n", argv[0]);
+                    goto done;
+                }
+                fclose(icc_from);
+                icc_from = NULL;
+                break;
+            }
+        }
+    }
+
+    if (icc_buffer && icc_len) {
+        HYDStatusCode ret = hyd_set_suggested_icc_profile(encoder, icc_buffer, icc_len);
+        if (ret < HYD_ERROR_START)
+            goto done;
+        free(icc_buffer);
+        icc_buffer = NULL;
+    }
+
     ret = hyd_provide_output_buffer(encoder, output_buffer, output_bufsize);
     if (ret < HYD_ERROR_START)
         goto done;
@@ -408,6 +463,8 @@ done:
         fclose(fout);
     if (fin)
         fclose(fin);
+    if (icc_from)
+        fclose(icc_from);
     if (spng_context)
         spng_ctx_free(spng_context);
     if (encoder) {
@@ -416,6 +473,7 @@ done:
     }
     free(buffer);
     free(output_buffer);
+    free(icc_buffer);
     if (ret < HYD_ERROR_START)
         fprintf(stderr, "Hydrium error occurred. Error code: %d\n", ret);
     if (error_msg && *error_msg)

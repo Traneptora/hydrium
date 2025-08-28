@@ -119,6 +119,48 @@ static const U32Table toc_table = {
     .upos = {10, 14, 22, 30},
 };
 
+static inline uint32_t icc_context(uint64_t i, uint32_t b1, uint32_t b2)
+{
+    uint32_t p1, p2;
+    if (i <= 128)
+        return 0;
+    if ((b1 >= 'a' && b1 <= 'z') || (b1 >= 'A' && b1 <= 'Z'))
+        p1 = 0;
+    else if ((b1 >= '0' && b1 <= '9') || b1 == '.' || b1 == ',')
+        p1 = 1;
+    else if (b1 <= 1)
+        p1 = b1 + 2;
+    else if (b1 > 1 && b1 < 16)
+        p1 = 4;
+    else if (b1 > 240 && b1 < 255)
+        p1 = 5;
+    else if (b1 == 255)
+        p1 = 6;
+    else
+        p1 = 7;
+
+    if ((b2 >= 'a' && b2 <= 'z') || (b2 >= 'A' && b2 <= 'Z'))
+        p2 = 0;
+    else if ((b2 >= '0' && b2 <= '9') || b2 == '.' || b2 == ',')
+        p2 = 1;
+    else if (b2 < 16)
+        p2 = 2;
+    else if (b2 > 240)
+        p2 = 3;
+    else
+        p2 = 4;
+
+    return 1 + p1 + p2 * 8;
+}
+
+static const uint8_t icc_cluster_map[41] = {
+    0, 1, 2, 3, 4, 5, 6, 7, 8,
+    1, 2, 3, 4, 5, 6, 7, 8,
+    1, 2, 3, 4, 5, 6, 7, 8,
+    1, 2, 3, 4, 5, 6, 7, 8,
+    1, 2, 3, 4, 5, 6, 7, 8,
+};
+
 static HYDStatusCode write_header(HYDEncoder *encoder) {
 
     HYDBitWriter *bw = &encoder->writer;
@@ -137,8 +179,60 @@ static HYDStatusCode write_header(HYDEncoder *encoder) {
     hyd_write(bw, 0, 3);
     hyd_write_u32(bw, &size_header_u32, encoder->metadata.width);
 
-    /* all_default:1, default_m:1 */
-    hyd_write(bw, 0x3, 2);
+    /* all_default */
+    hyd_write_bool(bw, 0);
+
+    /* extra_fields */
+    hyd_write_bool(bw, 0);
+
+    /* bit depth bundle */
+    /* float samples */
+    hyd_write_bool(bw, 0);
+    /* 8-bit depth */
+    hyd_write(bw, 0, 2);
+
+    /* modular 16-bit buffers */
+    hyd_write_bool(bw, 1);
+
+    /* extra channels == 0*/
+    hyd_write(bw, 0, 2);
+
+    /* xyb encoded == 1 */
+    hyd_write_bool(bw, 1);
+
+    /* color encoding */
+    if (encoder->icc_data) {
+        /* all_default == 0 */
+        hyd_write_bool(bw, 0);
+        /* want_icc == 1 */
+        hyd_write_bool(bw, 1);
+        /* ColorSpace == kRGB */
+        hyd_write_enum(bw, 0);
+    } else {
+        /* all_default == 1 */
+        hyd_write_bool(bw, 1);
+    }
+
+    /* extensions */
+    hyd_write_u64(bw, 0);
+
+    /* default_matrix == 1 */
+    hyd_write_bool(bw, 1);
+
+    if (encoder->icc_data) {
+        HYDEntropyStream icc_stream = { 0 };
+        hyd_write_u64(bw, encoder->icc_size);
+        hyd_entropy_init_stream(&icc_stream, encoder->icc_size, icc_cluster_map, 41, 0, 0, 0, &encoder->error);
+        uint32_t b1 = 0, b2 = 0;
+        for (uint64_t i = 0; i < encoder->icc_size; i++) {
+            hyd_entropy_send_symbol(&icc_stream, icc_context(i, b1, b2), encoder->icc_data[i]);
+            b2 = b1;
+            b1 = encoder->icc_data[i];
+        }
+        hyd_prefix_finalize_stream(&icc_stream, bw);
+    }
+
+    hyd_write_zero_pad(bw);
 
     encoder->wrote_header = 1;
     return bw->overflow_state;
@@ -662,16 +756,6 @@ static HYDStatusCode initialize_hf_coeffs(HYDEncoder *encoder, HYDEntropyStream 
     return encoder->working_writer.overflow_state;
 }
 
-static HYDStatusCode realloc_working_buffer(uint8_t **buffer, size_t *buffer_size) {
-    size_t new_size = *buffer_size << 1;
-    HYDStatusCode ret = hyd_realloc_p(buffer, new_size);
-    if (ret < HYD_ERROR_START)
-        return ret;
-    *buffer_size = new_size;
-
-    return HYD_OK;
-}
-
 HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t tile_y) {
     uint8_vec3 *non_zeroes = NULL;
     uint8_t *hf_cluster_map = NULL;
@@ -689,7 +773,7 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
         ret = hyd_init_bit_writer(&encoder->working_writer, encoder->working_writer.buffer,
                                    encoder->working_writer.buffer_len, 0, 0);
         encoder->copy_pos = 0;
-        encoder->working_writer.realloc_func = &realloc_working_buffer;
+        encoder->working_writer.realloc_func = &hyd_realloc_func_default;
     }
 
     if (ret < HYD_ERROR_START)

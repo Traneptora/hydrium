@@ -294,4 +294,23 @@ HYDRIUM_EXPORT HYDStatusCode hyd_flush(HYDEncoder *encoder);
  */
 HYDRIUM_EXPORT const char *hyd_error_message_get(HYDEncoder *encoder);
 
+/**
+ * @brief Tag the output file with the suggested ICC profile.
+ *
+ * JPEG XL files can contain ICC profiles for XYB-encoded images, which are
+ * suggestions for the input file, rather than descriptions of the pixel data.
+ *
+ * libhydrium only accepts sRGB and linear sRGB input, but this function lets a
+ * client tag the result with an ICC profile, in case CMS was performed before
+ * calling libhydrium from a specific ICC profile.
+ *
+ * @param encoder A HYDEncoder struct
+ * @param icc_data A buffer containing an ICC Profile. The buffer is not taken
+ *     by the caller, and it can be freed as soon as this function returns.
+ * @param icc_size The size of the ICC Profile buffer.
+ * @return HYD_OK upon success, a negative error code upon failure.
+ */
+HYDRIUM_EXPORT HYDStatusCode hyd_set_suggested_icc_profile(HYDEncoder *encoder,
+    const uint8_t *icc_data, size_t icc_size);
+
 #endif /* HYDRIUM_H_ */
