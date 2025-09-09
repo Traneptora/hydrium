@@ -226,8 +226,8 @@ int main(int argc, const char *argv[]) {
     }
 
     if (pfm) {
-        const int i = 1;
-        int little = *((char *)&i);
+        const union { const int i; const char c[sizeof(int)]; } z = { .i = 1 };
+        int little = z.c[0];
         int ne = (little && endianness < 0) || (!little && endianness > 0);
         endianness = ne ? 1 : -1;
     }
