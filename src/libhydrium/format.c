@@ -142,8 +142,8 @@ HYDStatusCode hyd_populate_xyb_buffer(HYDEncoder *encoder, const void *const buf
         ptrdiff_t row_stride, ptrdiff_t pixel_stride, size_t lf_group_id,
         HYDSampleFormat sample_fmt) {
     int need_linearize = !encoder->metadata.linear_light;
-    uint16_t *input_lut;
-    float *bias_lut;
+    const uint16_t *input_lut;
+    const float *bias_lut;
     HYDStatusCode ret;
     if (sample_fmt == HYD_UINT8 || sample_fmt == HYD_UINT16) {
         uint16_t **lutss = sample_fmt == HYD_UINT8 ? &encoder->input_lut8 : &encoder->input_lut16;
