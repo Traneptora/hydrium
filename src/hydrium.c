@@ -93,6 +93,7 @@ int main(int argc, const char *argv[]) {
     int found_mm = 0;
     const char *icc_from_fname = NULL;
     FILE *icc_from = NULL;
+    uint8_t *icc_buffer = NULL;
 
     while (++argp < argc) {
         if (found_mm || strncmp(argv[argp], "--", 2)) {
@@ -133,7 +134,16 @@ int main(int argc, const char *argv[]) {
             linear = 1;
         } else if (!strncmp(argv[argp], "--tag-icc-from=", 15)) {
             icc_from_fname = argv[argp] + 15;
+        } else {
+            fprintf(stderr, "Unknown option: %s\n", argv[argp]);
+            fprintf(stderr, "Please run: %s --help\n", argv[0]);
+            return 2;
         }
+    }
+
+    if (!one_frame && icc_from_fname) {
+        fprintf(stderr, "--tag-icc-from= requires --one-frame\n");
+        return 2;
     }
 
     if (in_fname && pfm < 0) {
@@ -327,7 +337,6 @@ int main(int argc, const char *argv[]) {
     if (ret < HYD_ERROR_START)
         goto done;
 
-    uint8_t *icc_buffer = NULL;
     size_t icc_len = 0;
     if (icc_from_fname && *icc_from_fname) {
         icc_from = fopen(icc_from_fname, "rb");
