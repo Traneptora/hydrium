@@ -86,7 +86,7 @@ int main(int argc, const char *argv[]) {
     int pfm = -1;
     int linear = 0;
     int endianness = 0;
-    long tilesize = 0;
+    long tilesize = -1;
     int argp = 0;
     const char *in_fname = NULL;
     const char *out_fname = NULL;
@@ -139,6 +139,14 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "Please run: %s --help\n", argv[0]);
             return 2;
         }
+    }
+
+    if (!one_frame && tilesize < 0)
+        one_frame = 1;
+    if (one_frame && tilesize >= 0) {
+        fprintf(stderr, "--one-frame and --tile-size are incompatible\n");
+        fprintf(stderr, "Please run: %s --help\n", argv[0]);
+        return 2;
     }
 
     if (!one_frame && icc_from_fname) {
@@ -365,9 +373,10 @@ int main(int argc, const char *argv[]) {
                 icc_buffer = p;
                 icc_bufsize <<= 1;
             }
-            size_t read = fread(icc_buffer + icc_len, 1, 4096, icc_from);
+            size_t remaining = icc_bufsize - icc_len;
+            size_t read = fread(icc_buffer + icc_len, 1, remaining, icc_from);
             icc_len += read;
-            if (read < 4096) {
+            if (read < remaining) {
                 if (ferror(icc_from)) {
                     fprintf(stderr, "%s: error reading from icc file\n", argv[0]);
                     goto done;
@@ -380,6 +389,8 @@ int main(int argc, const char *argv[]) {
     }
 
     if (icc_buffer && icc_len) {
+        /* decrease size, actually freeing memory, should always succeed */
+        icc_buffer = realloc(icc_buffer, icc_len);
         HYDStatusCode ret = hyd_set_suggested_icc_profile(encoder, icc_buffer, icc_len);
         if (ret < HYD_ERROR_START)
             goto done;
