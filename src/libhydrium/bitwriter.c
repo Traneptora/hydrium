@@ -11,6 +11,8 @@
 #include "memory.h"
 #include "internal.h"
 
+#define HYD_WRITER_INIT_SIZE 4096
+
 static const U32Table enum_table = {
     .cpos = {0, 1, 2, 18},
     .upos = {0, 0, 4, 6},
@@ -18,6 +20,13 @@ static const U32Table enum_table = {
 
 HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buffer_len,
                                   uint64_t cache, int cache_bits) {
+    HYDStatusCode ret = HYD_OK;
+    if (!buffer_len) {
+        buffer_len = HYD_WRITER_INIT_SIZE;
+        ret = hyd_realloc_p(&buffer, buffer_len);
+        if (ret < HYD_ERROR_START)
+            return ret;
+    }
     bw->buffer = buffer;
     bw->buffer_len = buffer_len;
     bw->buffer_pos = 0;
@@ -26,6 +35,7 @@ HYDStatusCode hyd_init_bit_writer(HYDBitWriter *bw, uint8_t *buffer, size_t buff
     bw->overflow_state = HYD_OK;
     memset(bw->overflow, 0, sizeof(bw->overflow));
     bw->overflow_pos = 0;
+    bw->realloc_func = &hyd_realloc_func_default;
     return HYD_OK;
 }
 

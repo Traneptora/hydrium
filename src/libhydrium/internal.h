@@ -77,6 +77,9 @@ struct HYDEncoder {
 
     uint8_t *icc_data;
     size_t icc_size;
+
+    HYDBitWriter *hf_coeffs;
+    size_t num_hf_coeff_bw;
 };
 
 HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group, uint32_t tile_x, uint32_t tile_y);

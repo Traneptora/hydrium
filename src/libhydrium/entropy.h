@@ -31,22 +31,16 @@ typedef struct HYDVLCElement {
     uint32_t length;
 } HYDVLCElement;
 
-typedef struct HYDSymbolGroup {
-    HYDHybridSymbol *symbols;
-    size_t count;
-    size_t capacity;
-} HYDSymbolGroup;
-
 typedef struct HYDEntropyStream {
     size_t num_dists;
     uint8_t *cluster_map;
     size_t num_clusters;
-    size_t num_symbol_groups;
-    size_t symbol_group_pos;
-    HYDSymbolGroup *symbols;
-    uint16_t max_alphabet_size;
-    uint16_t alphabet_sizes[256];
+    HYDHybridSymbol *symbols;
+    size_t symbol_count;
+    size_t symbol_capacity;
     uint32_t *frequencies[256];
+    uint16_t alphabet_sizes[256];
+    uint16_t max_alphabet_size;
     HYDHybridUintConfig configs[256];
     int wrote_stream_header;
 
@@ -78,7 +72,7 @@ HYDStatusCode hyd_entropy_send_symbol(HYDEntropyStream *stream, size_t dist, uin
 
 HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream, HYDBitWriter *bw);
 HYDStatusCode hyd_prefix_write_stream_symbols(HYDEntropyStream *stream, HYDBitWriter *bw,
-    size_t symbol_group, size_t symbol_start, size_t symbol_count);
+    size_t symbol_start, size_t symbol_count);
 
 /**
  * @brief write_stream_header, write_stream_symbols, and entropy_stream_destroy in one function
@@ -88,7 +82,9 @@ HYDStatusCode hyd_prefix_finalize_stream(HYDEntropyStream *stream, HYDBitWriter 
 
 HYDStatusCode hyd_ans_write_stream_header(HYDEntropyStream *stream, HYDBitWriter *bw);
 HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, HYDBitWriter *bw,
-    size_t symbol_group, size_t symbol_offset, size_t symbol_count);
+    size_t symbol_offset, size_t symbol_count);
+HYDStatusCode hyd_ans_prepare_frequencies(HYDEntropyStream *stream, size_t cluster_from, size_t cluster_to,
+    size_t symbol_from, size_t symbol_count);
 
 /**
  * @brief write_stream_header, write_stream_symbols, and entropy_stream_destroy in one function

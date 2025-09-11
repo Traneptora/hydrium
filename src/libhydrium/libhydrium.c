@@ -21,6 +21,7 @@ HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(void) {
 HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     if (!encoder)
         return HYD_OK;
+
     hyd_entropy_stream_destroy(&encoder->hf_stream);
     if (encoder->section_endpos != encoder->section_endpos_array)
         hyd_freep(&encoder->section_endpos);
@@ -35,7 +36,13 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
     hyd_freep(&encoder->input_lut16);
     hyd_freep(&encoder->bias_cbrtf_lut);
     hyd_freep(&encoder->icc_data);
+    if (encoder->hf_coeffs) {
+        for (size_t i = 0; i < encoder->num_hf_coeff_bw; i++)
+            hyd_freep(&encoder->hf_coeffs[i].buffer);
+    }
+    hyd_freep(&encoder->hf_coeffs);
     hyd_freep(&encoder);
+
     return HYD_OK;
 }
 
@@ -248,8 +255,15 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_suggested_icc_profile(HYDEncoder *encoder,
         return HYD_OK;
     }
 
-    if (!icc_size || !icc_data || icc_size > UINT32_MAX)
+    if (!encoder->one_frame) {
+        encoder->error = "one-frame mode required to set the suggested ICC profile";
         return HYD_API_ERROR;
+    }
+
+    if (!icc_size || !icc_data || icc_size > UINT32_MAX) {
+        encoder->error = "invalid ICC size or data buffer";
+        return HYD_API_ERROR;
+    }
 
     /* three varints and two bytes */
     /* varint caps out at 10 bytes for ~0ul */
