@@ -28,17 +28,18 @@ static void print_usage(const char *argv0) {
     fprintf(stderr, "Usage: %s [options] [--] <input.png|input.pfm> <output.jxl>\n", argv0);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "    --help         Print this message\n");
+    fprintf(stderr, "    --one-frame    Use one frame. Uses more memory but decodes faster.\n");
+    fprintf(stderr, "                       (default: on)\n");
     fprintf(stderr, "    --tile-size=N  Use Tile Size Shift = N, valid values are 0, 1, 2, 3\n");
     fprintf(stderr, "                       Tile dimensions will be 256 * 2^N\n");
     fprintf(stderr, "                       Larger tiles use more memory but decode faster.\n");
-    fprintf(stderr, "                       (default: N=0)\n");
-    fprintf(stderr, "    --one-frame    Use one frame. Uses more memory but decodes faster.\n");
-    fprintf(stderr, "                       (default: off)\n");
     fprintf(stderr, "    --pfm          Assume input is PFM (Portable FloatMap)\n");
     fprintf(stderr, "    --png          Assume input is PNG (Portable Network Graphics)\n");
     fprintf(stderr, "                       (default: assume PNG unless input filename ends with .pfm)\n");
     fprintf(stderr, "    --linear       Assume input is in Linear Light\n");
     fprintf(stderr, "                       (default: assume sRGB transfer, regardless of PNG tags)\n");
+    fprintf(stderr, "    --tag-icc-from=FILE.icc\n");
+    fprintf(stderr, "                   Use FILE as the suggested ICC profile. Input still assumed to be sRGB.\n");
 }
 
 static int init_spng_stream(spng_ctx **ctx, const char **error_msg, FILE *fin, struct spng_ihdr *ihdr) {
