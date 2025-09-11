@@ -1,6 +1,6 @@
 project('hydrium', 'c',
     license: ['BSD-2-Clause'],
-    version : '0.5.0',
+    version : '0.6.0',
     default_options: [
         'debug=false',
         'optimization=s',

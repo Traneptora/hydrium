@@ -18,7 +18,7 @@
 /*
  * Minor version, following semantic versioning.
  */
-#define HYDRIUM_VERSION_MINOR 5
+#define HYDRIUM_VERSION_MINOR 6
 /*
  * Point release, following semantic versioning.
  */
