@@ -82,13 +82,8 @@ void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
         free(stream->frequencies[i]);
     hyd_free_arraybuffer_p(stream->cluster_map_array, &stream->cluster_map);
     free(stream->symbols);
-    for (size_t i = 0; i < stream->num_clusters; i++) {
-        if (stream->alias_table[i]) {
-            for (size_t j = 0; j < stream->alphabet_sizes[i]; j++)
-                free(stream->alias_table[i][j].cutoffs);
-            free(stream->alias_table[i]);
-        }
-    }
+    for (size_t i = 0; i < stream->num_clusters; i++)
+        hyd_freep(&stream->alias_table[i]);
     free(stream->vlc_table[0]);
     memset(stream, 0, sizeof(*stream));
 }
@@ -247,12 +242,9 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     }
 
     for (uint32_t sym = 0; sym < stream->alphabet_sizes[cluster]; sym++) {
-        alias_table[sym].cutoffs = calloc(3 * (alias_table[sym].count + 1), sizeof(int32_t));
-        if (!alias_table[sym].cutoffs)
-            return HYD_NOMEM;
-        memset(alias_table[sym].cutoffs, -1, 3 * (alias_table[sym].count + 1) * sizeof(int32_t));
-        alias_table[sym].offsets = alias_table[sym].cutoffs + alias_table[sym].count + 1;
-        alias_table[sym].original = alias_table[sym].offsets + alias_table[sym].count + 1;
+        memset(alias_table[sym].cutoffs, -1, sizeof(alias_table[sym].cutoffs));
+        memset(alias_table[sym].offsets, -1, sizeof(alias_table[sym].offsets));
+        memset(alias_table[sym].original, -1, sizeof(alias_table[sym].original));
         alias_table[sym].offsets[0] = 0;
         alias_table[sym].cutoffs[0] = cutoffs[sym];
         alias_table[sym].original[0] = sym;
