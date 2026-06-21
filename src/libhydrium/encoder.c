@@ -246,13 +246,13 @@ static void calculate_toc_perm(HYDEncoder *encoder, size_t toc_size, size_t *toc
     }
     size_t idx = 1;
     for (size_t sent_lfid = 0; sent_lfid < encoder->lfg_per_frame; sent_lfid++) {
-        size_t raster_lfid = encoder->lfg_perm ? encoder->lfg_perm[sent_lfid] : 0;
+        size_t raster_lfid = encoder->lfg_perm ? encoder->lfg_perm[sent_lfid] : sent_lfid;
         toc[idx++] = 1 + raster_lfid; // LFGroup
     }
     for (size_t sent_lfid = 0; sent_lfid < encoder->lfg_per_frame; sent_lfid++) {
         if (sent_lfid == 0)
             toc[idx++] = 1 + encoder->lfg_per_frame; // HFGlobal
-        size_t raster_lfid = encoder->lfg_perm ? encoder->lfg_perm[sent_lfid] : 0;
+        size_t raster_lfid = encoder->lfg_perm ? encoder->lfg_perm[sent_lfid] : sent_lfid;
         const HYDLFGroup *lf_group = &encoder->lfg[raster_lfid];
         const size_t gcountx = (lf_group->width + 255) >> 8;
         const size_t gcounty = (lf_group->height + 255) >> 8;
@@ -270,9 +270,9 @@ static void calculate_toc_perm(HYDEncoder *encoder, size_t toc_size, size_t *toc
 static HYDStatusCode get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size, size_t **lehmer_p, size_t lehmer_init) {
     HYDStatusCode ret = HYD_OK;
     size_t toc_perm_array[64];
-    size_t *toc_perm = toc_perm_array;
+    size_t *toc_perm = NULL;
     int32_t temp_array[64];
-    int32_t *temp = temp_array;
+    int32_t *temp = NULL;
     const size_t frame_h = encoder->one_frame ? encoder->metadata.height : encoder->lfg->height;
     const size_t frame_w = encoder->one_frame ? encoder->metadata.width : encoder->lfg->width;
     const size_t frame_groups_y = (frame_h + 255) >> 8;
@@ -281,23 +281,20 @@ static HYDStatusCode get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size, 
     *toc_size = num_frame_groups > 1 ? 2 + num_frame_groups + encoder->lfg_per_frame : 1;
     if (*toc_size <= 1)
         return HYD_OK;
-    if ((*toc_size << 1) > hyd_array_size(toc_perm_array)) {
-        toc_perm = hyd_malloc_array(*toc_size << 1, sizeof(*toc_perm));
-        if (!toc_perm) {
-            ret = HYD_NOMEM;
-            goto end;
-        }
-    }
+    ret = hyd_malloc_arraybuffer_p(*toc_size << 1, sizeof(*toc_perm), toc_perm_array,
+        sizeof(toc_perm_array), &toc_perm);
+    if (ret < HYD_ERROR_START)
+        goto end;
+
     calculate_toc_perm(encoder, *toc_size, toc_perm, frame_groups_x);
-    if (*toc_size > hyd_array_size(temp_array)) {
-        temp = hyd_malloc_array(*toc_size, sizeof(int32_t));
-        if (!temp) {
-            ret = HYD_NOMEM;
-            goto end;
-        }
-    }
+
+    ret = hyd_malloc_arraybuffer_p(*toc_size, sizeof(*temp), temp_array, sizeof(temp_array), &temp);
+    if (ret < HYD_ERROR_START)
+        goto end;
+
     for (size_t i = 0; i < *toc_size; i++)
         temp[i] = i;
+
     size_t *lehmer;
     if (lehmer_init < *toc_size) {
         lehmer = calloc(*toc_size, sizeof(size_t));
@@ -322,10 +319,8 @@ static HYDStatusCode get_lehmer_sequence(HYDEncoder *encoder, size_t *toc_size, 
     }
 
 end:
-    if (toc_perm != toc_perm_array)
-        hyd_freep(&toc_perm);
-    if (temp != temp_array)
-        hyd_freep(&temp);
+    hyd_free_arraybuffer_p(toc_perm_array, &toc_perm);
+    hyd_free_arraybuffer_p(temp_array, &temp);
     return ret;
 }
 
@@ -450,7 +445,7 @@ HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group_p
         w = encoder->lfg->tile_count_x << 8;
     }
 
-    if (tile_x >= (encoder->metadata.width + w - 1) / w || tile_y >= (encoder->metadata.height + h - 1) / h) {
+    if (tile_x >= hyd_ceil_div(encoder->metadata.width, w) || tile_y >= hyd_ceil_div(encoder->metadata.height, h)) {
         encoder->error = "tile out of bounds";
         return HYD_API_ERROR;
     }
@@ -830,16 +825,10 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
     if (!encoder->tiles_sent) {
         if (num_frame_groups > 1) {
             const size_t count = 2 + encoder->lfg_per_frame + num_frame_groups;
-            if (count > hyd_array_size(encoder->section_endpos_array)) {
-                encoder->section_endpos = calloc(count, sizeof(size_t));
-                if (!encoder->section_endpos) {
-                    ret = HYD_NOMEM;
-                    goto end;
-                }
-            } else {
-                memset(encoder->section_endpos_array, 0, sizeof(encoder->section_endpos_array));
-                encoder->section_endpos = encoder->section_endpos_array;
-            }
+            ret = hyd_calloc_arraybuffer_p(count, sizeof(*encoder->section_endpos), encoder->section_endpos_array,
+                sizeof(encoder->section_endpos_array), &encoder->section_endpos);
+            if (ret < HYD_ERROR_START)
+                goto end;
             encoder->section_count = 0;
         }
         ret = write_lf_global(encoder);
@@ -1018,8 +1007,7 @@ HYDStatusCode hyd_encode_xyb_buffer(HYDEncoder *encoder, size_t tile_x, size_t t
     encoder->wrote_frame_header = 0;
     ret = hyd_flush(encoder);
     hyd_entropy_stream_destroy(&encoder->hf_stream);
-    if (encoder->section_endpos != encoder->section_endpos_array)
-        hyd_freep(&encoder->section_endpos);
+    hyd_free_arraybuffer_p(encoder->section_endpos_array, &encoder->section_endpos);
     hyd_freep(&encoder->hf_stream_barrier);
 
 end:

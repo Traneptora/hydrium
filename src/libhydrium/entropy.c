@@ -80,7 +80,7 @@ static HYDStatusCode write_ans_u8(HYDBitWriter *bw, uint8_t b) {
 void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
     for (size_t i = 0; i < stream->num_clusters; i++)
         free(stream->frequencies[i]);
-    free(stream->cluster_map);
+    hyd_free_arraybuffer_p(stream->cluster_map_array, &stream->cluster_map);
     free(stream->symbols);
     for (size_t i = 0; i < stream->num_clusters; i++) {
         if (stream->alias_table[i]) {
@@ -89,9 +89,8 @@ void hyd_entropy_stream_destroy(HYDEntropyStream *stream) {
             free(stream->alias_table[i]);
         }
     }
-    for (size_t i = 0; i < stream->num_clusters; i++)
-        free(stream->vlc_table[i]);
-    memset(stream, 0, sizeof(HYDEntropyStream));
+    free(stream->vlc_table[0]);
+    memset(stream, 0, sizeof(*stream));
 }
 
 HYDStatusCode hyd_entropy_set_hybrid_config(HYDEntropyStream *stream, uint8_t min_cluster, uint8_t to_cluster,
@@ -399,11 +398,11 @@ HYDStatusCode hyd_entropy_init_stream(HYDEntropyStream *stream, size_t init_symb
         goto fail;
     }
     stream->symbol_capacity = init_symbol_count;
-    stream->cluster_map = malloc(num_dists);
-    if (!stream->cluster_map) {
-        ret = HYD_NOMEM;
+    ret = hyd_malloc_arraybuffer_p(num_dists, sizeof(*stream->cluster_map), stream->cluster_map_array,
+        sizeof(stream->cluster_map_array), &stream->cluster_map);
+    if (ret < HYD_ERROR_START)
         goto fail;
-    }
+
     memcpy(stream->cluster_map, cluster_map, num_dists - !!lz77_min_symbol);
     for (size_t i = 0; i < num_dists - !!lz77_min_symbol; i++) {
         if (stream->cluster_map[i] >= stream->num_clusters)
@@ -814,6 +813,7 @@ end:
 HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream, HYDBitWriter *bw) {
     HYDStatusCode ret;
     uint32_t *lengths = NULL;
+    HYDVLCElement *vlc_table = NULL;
 
     ret = stream_header_common(stream, bw, 0);
     if (ret < HYD_ERROR_START)
@@ -824,13 +824,19 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream, HYDBitWri
         goto fail;
 
     lengths = hyd_malloc_array(stream->max_alphabet_size, sizeof(uint32_t));
-    for (size_t i = 0; i < stream->num_clusters; i++) {
-        stream->vlc_table[i] = calloc(stream->alphabet_sizes[i], sizeof(HYDVLCElement));
-        if (!stream->vlc_table[i]) {
-            ret = HYD_NOMEM;
-            goto fail;
-        }
+    size_t total_alphabet_size = 0;
+    for (size_t i = 0; i < stream->num_clusters; i++)
+        total_alphabet_size += stream->alphabet_sizes[i];
+
+    vlc_table = calloc(total_alphabet_size, sizeof(HYDVLCElement));
+    if (!vlc_table) {
+        ret = HYD_NOMEM;
+        goto fail;
     }
+
+    stream->vlc_table[0] = vlc_table;
+    for (size_t i = 0; i < stream->num_clusters - 1; i++)
+        stream->vlc_table[i + 1] = stream->vlc_table[i] + stream->alphabet_sizes[i];
 
     for (size_t i = 0; i < stream->num_clusters; i++) {
         if (stream->alphabet_sizes[i] <= 1) {
@@ -932,6 +938,10 @@ HYDStatusCode hyd_prefix_write_stream_header(HYDEntropyStream *stream, HYDBitWri
 
 fail:
     free(lengths);
+    free(vlc_table);
+    /* stream->vlc_table[0] might == vlc_table */
+    /* but zero it anyway so we don't double free below */
+    stream->vlc_table[0] = NULL;
     hyd_entropy_stream_destroy(stream);
     return ret;
 }
@@ -1114,15 +1124,19 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, HYDBitWrite
         }
         state = (div << 12) | (i << log_bucket_size) | pos;
     }
-    ret = append_state_flush(&flushes, last_push, last_value);
-    if (ret < HYD_ERROR_START)
-        goto end;
+
+    if (last_push) {
+        ret = append_state_flush(&flushes, last_push, last_value);
+        if (ret < HYD_ERROR_START)
+            goto end;
+    }
     ret = append_state_flush(&flushes, 0, (state >> 16) & 0xFFFF);
     if (ret < HYD_ERROR_START)
         goto end;
     ret = append_state_flush(&flushes, 0, state & 0xFFFF);
     if (ret < HYD_ERROR_START)
         goto end;
+
     size_t last_pop = 0;
     for (size_t p = 0; p < symbol_count; p++) {
         const StateFlush *flush;

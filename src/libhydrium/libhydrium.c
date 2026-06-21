@@ -23,15 +23,12 @@ HYDRIUM_EXPORT HYDStatusCode hyd_encoder_destroy(HYDEncoder *encoder) {
         return HYD_OK;
 
     hyd_entropy_stream_destroy(&encoder->hf_stream);
-    if (encoder->section_endpos != encoder->section_endpos_array)
-        hyd_freep(&encoder->section_endpos);
+    hyd_free_arraybuffer_p(encoder->section_endpos_array, &encoder->section_endpos);
     hyd_freep(&encoder->hf_stream_barrier);
     hyd_freep(&encoder->working_writer.buffer);
     hyd_freep(&encoder->xyb);
-    if (encoder->lfg != encoder->lfg_array)
-        hyd_freep(&encoder->lfg);
-    if (encoder->lfg_perm != encoder->lfg_perm_array)
-        hyd_freep(&encoder->lfg_perm);
+    hyd_free_arraybuffer_p(encoder->lfg_perm_array, &encoder->lfg_perm);
+    hyd_free_arraybuffer_p(encoder->lfg_array, &encoder->lfg);
     hyd_freep(&encoder->input_lut8);
     hyd_freep(&encoder->input_lut16);
     hyd_freep(&encoder->bias_cbrtf_lut);
@@ -83,31 +80,22 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     encoder->lfg_count_y = (metadata->height + 2047) >> 11;
     encoder->lfg_count_x = (metadata->width + 2047) >> 11;
     encoder->lfg_per_frame = encoder->one_frame ? encoder->lfg_count_y * encoder->lfg_count_x : 1;
-    if (encoder->lfg != encoder->lfg_array)
-        hyd_freep(&encoder->lfg);
-    if (encoder->lfg_per_frame > hyd_array_size(encoder->lfg_array)) {
-        encoder->lfg = hyd_malloc_array(encoder->lfg_per_frame, sizeof(*encoder->lfg));
-        if (!encoder->lfg)
-            return HYD_NOMEM;
-    } else {
-        encoder->lfg = encoder->lfg_array;
-    }
-
+    hyd_free_arraybuffer_p(encoder->lfg_array, &encoder->lfg);
+    ret = hyd_malloc_arraybuffer_p(encoder->lfg_per_frame, sizeof(*encoder->lfg), encoder->lfg_array,
+        sizeof(encoder->lfg_array), &encoder->lfg);
+    if (ret < HYD_ERROR_START)
+        goto fail;
+    hyd_free_arraybuffer_p(encoder->lfg_perm_array, &encoder->lfg_perm);
     if (encoder->one_frame) {
-        if (encoder->lfg_perm != encoder->lfg_perm_array)
-            hyd_freep(&encoder->lfg_perm);
-        if (encoder->lfg_per_frame > hyd_array_size(encoder->lfg_perm_array)) {
-            encoder->lfg_perm = hyd_malloc_array(encoder->lfg_per_frame, sizeof(*encoder->lfg_perm));
-            if (!encoder->lfg_perm)
-                return HYD_NOMEM;
-        } else {
-            encoder->lfg_perm = encoder->lfg_perm_array;
-        }
+        ret = hyd_malloc_arraybuffer_p(encoder->lfg_per_frame, sizeof(*encoder->lfg_perm),
+            encoder->lfg_perm_array, sizeof(encoder->lfg_perm_array), &encoder->lfg_perm);
+        if (ret < HYD_ERROR_START)
+            goto fail;
         for (size_t y = 0; y < encoder->lfg_count_y; y++) {
             for (size_t x = 0; x < encoder->lfg_count_x; x++) {
                 ret = hyd_populate_lf_group(encoder, NULL, x, y);
                 if (ret < HYD_ERROR_START)
-                    return ret;
+                    goto fail;
             }
         }
     } else {
@@ -116,6 +104,11 @@ HYDRIUM_EXPORT HYDStatusCode hyd_set_metadata(HYDEncoder *encoder, const HYDImag
     }
 
     return HYD_OK;
+
+fail:
+    hyd_free_arraybuffer_p(encoder->lfg_array, &encoder->lfg);
+    hyd_free_arraybuffer_p(encoder->lfg_perm_array, &encoder->lfg_perm);
+    return ret;
 }
 
 HYDRIUM_EXPORT HYDStatusCode hyd_provide_output_buffer(HYDEncoder *encoder, uint8_t *buffer, size_t buffer_len) {

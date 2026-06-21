@@ -33,8 +33,10 @@ typedef struct HYDVLCElement {
 
 typedef struct HYDEntropyStream {
     size_t num_dists;
+    uint8_t cluster_map_array[64];
     uint8_t *cluster_map;
     size_t num_clusters;
+
     HYDHybridSymbol *symbols;
     size_t symbol_count;
     size_t symbol_capacity;
