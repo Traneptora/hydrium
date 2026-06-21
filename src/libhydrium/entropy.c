@@ -242,21 +242,23 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
     }
 
     for (uint32_t sym = 0; sym < stream->alphabet_sizes[cluster]; sym++) {
-        memset(alias_table[sym].cutoffs, -1, sizeof(alias_table[sym].cutoffs));
-        memset(alias_table[sym].offsets, -1, sizeof(alias_table[sym].offsets));
-        memset(alias_table[sym].original, -1, sizeof(alias_table[sym].original));
-        alias_table[sym].offsets[0] = 0;
-        alias_table[sym].cutoffs[0] = cutoffs[sym];
-        alias_table[sym].original[0] = sym;
+        HYDAliasEntry *entry = &alias_table[sym];
+        memset(entry->cutoffs, -1, sizeof(entry->cutoffs));
+        memset(entry->offsets, -1, sizeof(entry->offsets));
+        memset(entry->original, -1, sizeof(entry->original));
+        entry->offsets[0] = 0;
+        entry->cutoffs[0] = cutoffs[sym];
+        entry->original[0] = sym;
     }
 
     for (uint32_t i = 0; i < table_size; i++) {
+        HYDAliasEntry *entry = &alias_table[symbols[i]];
         size_t j = 1;
-        while (alias_table[symbols[i]].cutoffs[j] >= 0)
+        while (entry->cutoffs[j] >= 0)
             j++;
-        alias_table[symbols[i]].cutoffs[j] = cutoffs[i];
-        alias_table[symbols[i]].offsets[j] = offsets[i];
-        alias_table[symbols[i]].original[j] = i;
+        entry->cutoffs[j] = cutoffs[i];
+        entry->offsets[j] = offsets[i];
+        entry->original[j] = i;
     }
 
     return HYD_OK;
