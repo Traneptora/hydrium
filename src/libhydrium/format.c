@@ -26,18 +26,19 @@ static inline float hyd_cbrtf(const float x) {
     return 1.0f / z.f;
 }
 
+static inline float bias_func(const float x) {
+    return hyd_cbrtf(x + 0.0037930732552754493f) - 0.155954f;
+}
+
 static inline uint16_t f32_to_u16(const float x) {
     const int32_t y = (int32_t)(x * 65535.f + 0.5f);
     return hyd_clamp(y, 0, 65535);
 }
 
 static inline HYD_vec3_f32 rgb_to_xyb_f32(const HYD_vec3_f32 rgb) {
-    const float lgamma = hyd_cbrtf(0.3f * rgb.v0 + 0.622f * rgb.v1 + 0.078f * rgb.v2
-        + 0.0037930732552754493f) - 0.155954f;
-    const float mgamma = hyd_cbrtf(0.23f * rgb.v0 + 0.692f * rgb.v1 + 0.078f * rgb.v2
-        + 0.0037930732552754493f) - 0.155954f;
-    const float sgamma = hyd_cbrtf(0.243423f * rgb.v0 + 0.204767f * rgb.v1 + 0.55181f * rgb.v2
-        + 0.0037930732552754493f) - 0.155954f;
+    const float lgamma = bias_func(0.3f * rgb.v0 + 0.622f * rgb.v1 + 0.078f * rgb.v2);
+    const float mgamma = bias_func(0.23f * rgb.v0 + 0.692f * rgb.v1 + 0.078f * rgb.v2);
+    const float sgamma = bias_func(0.243423f * rgb.v0 + 0.204767f * rgb.v1 + 0.55181f * rgb.v2);
     const float y = (lgamma + mgamma) * 0.5f;
     const float x = y - mgamma;
     const float b = sgamma - y;
@@ -77,7 +78,7 @@ static HYDStatusCode populate_output_lut(float **lut, const size_t size) {
         return HYD_NOMEM;
     const float factor = 1.0f / (size - 1.0f);
     for (size_t i = 0; i < size; i++)
-        (*lut)[i] = hyd_cbrtf(i * factor + 0.0037930732552754493f) - 0.155954f;
+        (*lut)[i] = bias_func(i * factor);
     return HYD_OK;
 }
 
