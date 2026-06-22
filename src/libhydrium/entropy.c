@@ -1082,7 +1082,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, HYDBitWrite
 
     uint32_t state = 0x130000u;
     const HYDHybridSymbol *symbols = stream->symbols + symbol_start;
-    size_t last_push = 0;
+    size_t last_push = symbol_count;
     uint16_t last_value = 0;
     for (size_t p2 = 0; p2 < symbol_count; p2++) {
         const size_t p = symbol_count - p2 - 1;
@@ -1090,7 +1090,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, HYDBitWrite
         const size_t cluster = symbols[p].cluster;
         const uint32_t freq = stream->frequencies[cluster][symbol];
         if ((state >> 20) >= freq) {
-            if (last_push) {
+            if (last_push != symbol_count) {
                 ret = append_state_flush(&flushes, last_push - p, last_value);
                 if (ret < HYD_ERROR_START)
                     goto end;
@@ -1119,7 +1119,7 @@ HYDStatusCode hyd_ans_write_stream_symbols(HYDEntropyStream *stream, HYDBitWrite
         state = (div << 12) | (i << log_bucket_size) | pos;
     }
 
-    if (last_push) {
+    if (last_push != symbol_count) {
         ret = append_state_flush(&flushes, last_push, last_value);
         if (ret < HYD_ERROR_START)
             goto end;
