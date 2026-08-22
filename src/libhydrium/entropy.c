@@ -253,9 +253,9 @@ static HYDStatusCode generate_alias_mapping(HYDEntropyStream *stream, size_t clu
 
     for (uint32_t i = 0; i < table_size; i++) {
         HYDAliasEntry *entry = &alias_table[symbols[i]];
-        size_t j = 1;
-        while (entry->cutoffs[j] >= 0)
-            j++;
+        size_t j = 0;
+        while (entry->cutoffs[++j] >= 0)
+            continue;
         entry->cutoffs[j] = cutoffs[i];
         entry->offsets[j] = offsets[i];
         entry->original[j] = i;

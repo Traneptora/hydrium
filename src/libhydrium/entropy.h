@@ -15,9 +15,9 @@ typedef struct HYDHybridSymbol {
 
 typedef struct HYDAliasEntry {
     size_t count;
-    int32_t cutoffs[256];
-    int32_t offsets[256];
-    int32_t original[256];
+    int16_t cutoffs[256];
+    int16_t offsets[256];
+    int16_t original[256];
 } HYDAliasEntry;
 
 typedef struct HYDHybridUintConfig {

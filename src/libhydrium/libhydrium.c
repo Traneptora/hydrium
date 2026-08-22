@@ -15,6 +15,12 @@
 
 HYDRIUM_EXPORT HYDEncoder *hyd_encoder_new(void) {
     HYDEncoder *ret = calloc(1, sizeof(HYDEncoder));
+    if (!ret)
+        return NULL;
+
+    ret->last_preset = -1;
+    ret->last_lfid = -1;
+
     return ret;
 }
 

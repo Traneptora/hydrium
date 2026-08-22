@@ -40,8 +40,8 @@ struct HYDEncoder {
     int one_frame;
     int last_tile;
 
-    size_t lfg_count_y, lfg_count_x;
-    size_t lfg_per_frame;
+    uint32_t lfg_count_y, lfg_count_x;
+    uint32_t lfg_per_frame;
 
     HYDLFGroup lfg_array[64];
     HYDLFGroup *lfg;
@@ -59,7 +59,7 @@ struct HYDEncoder {
 
     int wrote_header;
     int wrote_frame_header;
-    size_t tiles_sent;
+    uint32_t tiles_sent;
     int level10;
 
     size_t section_endpos_array[64];
@@ -80,6 +80,9 @@ struct HYDEncoder {
 
     HYDBitWriter *hf_coeffs;
     size_t num_hf_coeff_bw;
+
+    int32_t last_preset;
+    int32_t last_lfid;
 };
 
 HYDStatusCode hyd_populate_lf_group(HYDEncoder *encoder, HYDLFGroup **lf_group, uint32_t tile_x, uint32_t tile_y);
